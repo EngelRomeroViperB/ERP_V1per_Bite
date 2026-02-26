@@ -2,8 +2,17 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { Bell, LogOut, Plus, Zap } from "lucide-react";
-import { useState } from "react";
+import { Bell, LogOut, Plus, Zap, X, CheckCheck } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+
+interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+}
 
 interface HeaderProps {
   title?: string;
@@ -13,11 +22,63 @@ export function Header({ title = "Dashboard" }: HeaderProps) {
   const supabase = createClient();
   const router = useRouter();
   const [showQuickCapture, setShowQuickCapture] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  async function fetchNotifications() {
+    const { data } = await supabase
+      .from("notifications")
+      .select("id, title, body, type, is_read, created_at")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) setNotifications(data);
+  }
+
+  async function markAllRead() {
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    await supabase.from("notifications").update({ is_read: true }).in("id", unreadIds);
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+  }
+
+  async function markOneRead(id: string) {
+    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+    );
+  }
 
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
+  }
+
+  function timeAgo(dateStr: string) {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return "ahora";
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
   }
 
   return (
@@ -33,10 +94,80 @@ export function Header({ title = "Dashboard" }: HeaderProps) {
           <span className="hidden sm:inline">Captura rápida</span>
         </button>
 
-        <button className="relative p-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-primary rounded-full" />
-        </button>
+        {/* Notifications */}
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => setShowNotifications((v) => !v)}
+            className="relative p-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 bg-primary rounded-full text-[10px] text-primary-foreground flex items-center justify-center font-bold">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {showNotifications && (
+            <div className="absolute right-0 top-10 w-80 bg-background border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                <span className="text-sm font-semibold">Notificaciones</span>
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllRead}
+                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      Marcar leídas
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowNotifications(false)}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    Sin notificaciones
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => markOneRead(n.id)}
+                      className={`px-4 py-3 border-b border-border last:border-0 cursor-pointer hover:bg-accent/50 transition-colors ${
+                        !n.is_read ? "bg-primary/5" : ""
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm truncate ${!n.is_read ? "font-semibold" : ""}`}>
+                            {n.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                            {n.body}
+                          </p>
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {timeAgo(n.created_at)}
+                        </span>
+                      </div>
+                      {!n.is_read && (
+                        <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full mt-1.5" />
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         <button
           onClick={handleSignOut}
