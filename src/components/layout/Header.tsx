@@ -9,7 +9,7 @@ type SpeechRecognitionCtor = new () => {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onresult: ((event: { results: ArrayLike<{ isFinal?: boolean; 0?: { transcript: string } }> }) => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
@@ -97,13 +97,15 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
 
     const recognition = new Recognition();
     recognition.continuous = false;
-    recognition.interimResults = true;
+    recognition.interimResults = false;
     recognition.lang = "es-ES";
 
     recognition.onresult = (event) => {
       let transcript = "";
       for (let i = 0; i < event.results.length; i += 1) {
-        transcript += event.results[i][0]?.transcript ?? "";
+        const result = event.results[i];
+        if (result?.isFinal === false) continue;
+        transcript += result[0]?.transcript ?? "";
       }
       setCaptureText((prev) => `${prev}${prev ? " " : ""}${transcript.trim()}`.trim());
     };
@@ -291,11 +293,11 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
 
       {showQuickCapture && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm p-2 md:p-4"
           onClick={() => setShowQuickCapture(false)}
         >
           <div
-            className="glass rounded-2xl p-6 w-full max-w-lg mx-4"
+            className="glass rounded-2xl p-5 md:p-6 w-full max-w-lg max-h-[88vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 mb-4">

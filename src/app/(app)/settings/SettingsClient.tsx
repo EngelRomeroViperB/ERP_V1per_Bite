@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Save, User, Bell, Shield, LogOut, Check } from "lucide-react";
@@ -41,6 +41,9 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
   const [profile, setProfile] = useState<Profile | null>(initialProfile);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushStatus, setPushStatus] = useState<string>("No configurado");
   const initialPreferences = (initialProfile?.preferences ?? {}) as Record<string, unknown>;
   const [form, setForm] = useState({
     full_name: initialProfile?.full_name ?? "",
@@ -48,6 +51,99 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
     mood_labels: parsePreferenceList(initialPreferences.mood_labels).join(", "),
     energy_labels: parsePreferenceList(initialPreferences.energy_labels).join(", "),
   });
+
+  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const notificationSupported = "Notification" in window;
+    const swSupported = "serviceWorker" in navigator;
+    if (!notificationSupported || !swSupported) {
+      setPushStatus("No compatible en este navegador");
+      return;
+    }
+    if (Notification.permission === "granted") {
+      setPushStatus("Permiso concedido");
+    } else if (Notification.permission === "denied") {
+      setPushStatus("Permiso bloqueado en el navegador");
+    }
+  });
+
+  function base64ToUint8Array(base64: string) {
+    const padded = (base64 + "=".repeat((4 - (base64.length % 4)) % 4))
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+    const raw = window.atob(padded);
+    return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+  }
+
+  async function enablePushNotifications() {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator) || !("Notification" in window)) {
+      setPushStatus("No compatible en este navegador");
+      return;
+    }
+    if (!vapidKey) {
+      setPushStatus("Falta NEXT_PUBLIC_VAPID_PUBLIC_KEY en .env");
+      return;
+    }
+
+    setPushBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setPushStatus("Permiso denegado");
+        setPushEnabled(false);
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: base64ToUint8Array(vapidKey),
+        }));
+
+      const res = await fetch("/api/notifications/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription, enabled: true }),
+      });
+      if (!res.ok) throw new Error("No se pudo guardar la suscripción");
+
+      setPushEnabled(true);
+      setPushStatus("Push activadas ✅");
+    } catch {
+      setPushStatus("Error configurando push");
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function disablePushNotifications() {
+    if (!("serviceWorker" in navigator)) return;
+    setPushBusy(true);
+    try {
+      const registration = await navigator.serviceWorker.getRegistration("/");
+      const subscription = await registration?.pushManager.getSubscription();
+      if (subscription) {
+        await subscription.unsubscribe();
+      }
+      await fetch("/api/notifications/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: null, enabled: false }),
+      });
+      setPushEnabled(false);
+      setPushStatus("Push desactivadas");
+    } catch {
+      setPushStatus("No se pudo desactivar");
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   async function handleSave() {
     if (!profile) return;
@@ -186,9 +282,29 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
           <Bell className="w-4 h-4 text-primary" />
           <h3 className="font-semibold">Notificaciones</h3>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Las notificaciones push estarán disponibles cuando se configure VAPID en `.env.local`.
+        <p className="text-sm text-muted-foreground mb-3">
+          Configura notificaciones push del navegador para recordatorios y alertas.
         </p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Requiere `NEXT_PUBLIC_VAPID_PUBLIC_KEY` y `VAPID_PRIVATE_KEY` en `.env.local`.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={enablePushNotifications}
+            disabled={pushBusy}
+            className="px-3 py-2 rounded-lg text-xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          >
+            {pushBusy ? "Configurando..." : "Activar push"}
+          </button>
+          <button
+            onClick={disablePushNotifications}
+            disabled={pushBusy}
+            className="px-3 py-2 rounded-lg text-xs border border-border hover:bg-accent disabled:opacity-60"
+          >
+            Desactivar
+          </button>
+          <span className={cn("text-xs", pushEnabled ? "text-green-400" : "text-muted-foreground")}>{pushStatus}</span>
+        </div>
       </div>
 
       {/* Security */}

@@ -13,11 +13,13 @@ const CLASSIFY_PROMPT = `Analiza el siguiente texto en español y clasifícalo. 
 
 Categorías posibles:
 - "task": tarea, pendiente, recordatorio de acción futura
+- "habit": petición para crear o definir hábitos/rutinas
 - "metric": dato personal (peso, sueño, energía, estado de ánimo, calorías)
 - "finance": gasto, ingreso, pago, compra
 - "note": cualquier otra cosa
 
 Para "task": { "type": "task", "title": string, "priority": "p1"|"p2"|"p3"|"p4" }
+Para "habit": { "type": "habit", "habit_names": string[] }
 Para "metric": { "type": "metric", "weight_kg"?: number, "sleep_hours"?: number, "mood"?: number (1-5), "energy"?: number (1-5), "kcal"?: number }
 Para "finance": { "type": "finance", "amount": number, "transaction_type": "expense"|"income", "description": string }
 Para "note": { "type": "note", "title": string, "content": string }
@@ -25,9 +27,10 @@ Para "note": { "type": "note", "title": string, "content": string }
 Texto: `;
 
 type CaptureResult = {
-  type: "task" | "metric" | "finance" | "note";
+  type: "task" | "habit" | "metric" | "finance" | "note";
   title?: string;
   content?: string;
+  habit_names?: string[];
   priority?: string;
   weight_kg?: number;
   sleep_hours?: number;
@@ -58,16 +61,61 @@ function extractFirstNumber(text: string): number | undefined {
   return toNumber(match[1]);
 }
 
+function extractHabitNames(inputText: string) {
+  const cleaned = inputText
+    .replace(/\r/g, "\n")
+    .replace(/[•·]/g, "-")
+    .trim();
+
+  const lines = cleaned
+    .split("\n")
+    .map((line) => line.replace(/^[-\d.)\s]+/, "").trim())
+    .filter(Boolean);
+
+  const source = lines.length > 1 ? lines : cleaned.split(/,|;|\sy\s/gi).map((v) => v.trim()).filter(Boolean);
+  const candidates = source
+    .map((item) => item.replace(/^crear\s+/i, "").replace(/^h[áa]bitos?\s*/i, "").trim())
+    .filter((item) => item.length >= 3)
+    .slice(0, 6);
+
+  if (candidates.length > 0) return candidates;
+
+  return [
+    "Hidratación diaria (2L)",
+    "Movimiento 30 minutos",
+    "Plan de día (10 min)",
+  ];
+}
+
+function inferHabitIcon(name: string) {
+  const text = name.toLowerCase();
+  if (/(agua|hidrat)/.test(text)) return "💧";
+  if (/(leer|lectura|libro)/.test(text)) return "📚";
+  if (/(medit|respira|mindfulness)/.test(text)) return "🧘";
+  if (/(ejercicio|camin|correr|gym|movimiento)/.test(text)) return "🏃";
+  if (/(dormir|sueño|descanso)/.test(text)) return "🛌";
+  if (/(plan|agenda|organiza)/.test(text)) return "🎯";
+  return "✅";
+}
+
 function normalizeCaptureResult(raw: unknown, inputText: string): CaptureResult {
   const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const rawType = typeof obj.type === "string" ? obj.type.toLowerCase() : "note";
   const type: CaptureResult["type"] =
-    rawType === "task" || rawType === "metric" || rawType === "finance" ? rawType : "note";
+    rawType === "task" || rawType === "habit" || rawType === "metric" || rawType === "finance" ? rawType : "note";
+
+  const habitNames = Array.isArray(obj.habit_names)
+    ? obj.habit_names
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 8)
+    : undefined;
 
   return {
     type,
     title: typeof obj.title === "string" ? obj.title : inputText.slice(0, 100),
     content: typeof obj.content === "string" ? obj.content : inputText,
+    habit_names: habitNames,
     priority: typeof obj.priority === "string" ? obj.priority : undefined,
     weight_kg: toNumber(obj.weight_kg),
     sleep_hours: toNumber(obj.sleep_hours),
@@ -88,6 +136,13 @@ function normalizeTaskPriority(priority?: string) {
 
 function classifyLocally(inputText: string): CaptureResult {
   const text = inputText.toLowerCase();
+
+  if (/(h[áa]bito|rutina|ritual)/.test(text) && /(crear|agrega|sugier|necesito|quiero|define|plan)/.test(text)) {
+    return {
+      type: "habit",
+      habit_names: extractHabitNames(inputText),
+    };
+  }
 
   const weightMatch = text.match(/(\d+(?:[.,]\d+)?)\s*(kg|kilo|kilos)/);
   if (weightMatch) {
@@ -202,6 +257,33 @@ export async function POST(req: NextRequest) {
       });
       if (error) throw error;
       label = "Tarea creada";
+    } else if (parsed.type === "habit") {
+      const requestedHabits = (parsed.habit_names ?? extractHabitNames(inputText)).slice(0, 8);
+      const { data: existingHabits } = await supabase
+        .from("habits")
+        .select("name")
+        .eq("user_id", user.id);
+
+      const existing = new Set((existingHabits ?? []).map((h) => h.name.toLowerCase().trim()));
+      const toInsert = requestedHabits
+        .map((name: string) => name.trim())
+        .filter((name: string) => name.length > 2 && !existing.has(name.toLowerCase()))
+        .slice(0, 6)
+        .map((name: string) => ({
+          user_id: user.id,
+          name,
+          icon: inferHabitIcon(name),
+          frequency: "daily",
+          target_streak: 30,
+        }));
+
+      if (toInsert.length > 0) {
+        const { error } = await supabase.from("habits").insert(toInsert);
+        if (error) throw error;
+        label = `${toInsert.length} hábito${toInsert.length > 1 ? "s" : ""} creado${toInsert.length > 1 ? "s" : ""}`;
+      } else {
+        label = "Hábitos ya existentes";
+      }
     } else if (parsed.type === "metric") {
       const today = new Date().toISOString().split("T")[0];
       const metricData: Record<string, unknown> = { user_id: user.id, metric_date: today };

@@ -5,12 +5,14 @@ import {
   CheckSquare,
   Flame,
   TrendingUp,
+  TrendingDown,
   DollarSign,
   Sparkles,
   Brain,
   Activity,
 } from "lucide-react";
 import { TrendChart } from "./TrendChart";
+import { FinanceTrendChart } from "./FinanceTrendChart";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -47,6 +49,7 @@ export default async function DashboardPage() {
     .maybeSingle();
 
   const week7Start = format(new Date(Date.now() - 6 * 86400000), "yyyy-MM-dd");
+  const days14Start = format(new Date(Date.now() - 13 * 86400000), "yyyy-MM-dd");
 
   const [{ data: habits }, { data: weekMetrics }] = await Promise.all([
     supabase.from("habits").select("*").eq("frequency", "daily").order("created_at"),
@@ -62,11 +65,50 @@ export default async function DashboardPage() {
     .eq("log_date", today)
     .eq("completed", true);
 
+  const { data: recentFinances } = await supabase
+    .from("finances")
+    .select("transaction_date, amount, type, source")
+    .gte("transaction_date", days14Start)
+    .order("transaction_date", { ascending: true });
+
   const p1Tasks = todayTasks?.filter((t) => t.priority === "P1") ?? [];
   const allTasks = todayTasks ?? [];
   const completedHabitIds = new Set((habitLogs ?? []).map((l) => l.habit_id));
   const dailyHabits = habits ?? [];
   const completedCount = dailyHabits.filter((h) => completedHabitIds.has(h.id)).length;
+
+  const dayMap = new Map<string, { income: number; expense: number }>();
+  for (let i = 13; i >= 0; i -= 1) {
+    const date = format(new Date(Date.now() - i * 86400000), "yyyy-MM-dd");
+    dayMap.set(date, { income: 0, expense: 0 });
+  }
+  for (const tx of recentFinances ?? []) {
+    const row = dayMap.get(tx.transaction_date);
+    if (!row) continue;
+    if (tx.type === "income") row.income += Number(tx.amount ?? 0);
+    else row.expense += Number(tx.amount ?? 0);
+  }
+
+  const financeTrend = Array.from(dayMap.entries()).map(([date, values]) => ({
+    date,
+    income: values.income,
+    expense: values.expense,
+    net: values.income - values.expense,
+  }));
+
+  const income14 = financeTrend.reduce((sum, d) => sum + d.income, 0);
+  const expense14 = financeTrend.reduce((sum, d) => sum + d.expense, 0);
+  const net14 = income14 - expense14;
+  const shopifyIncome14 = (recentFinances ?? [])
+    .filter((tx) => tx.type === "income" && (tx.source ?? "").toLowerCase().includes("shopify"))
+    .reduce((sum, tx) => sum + Number(tx.amount ?? 0), 0);
+
+  const fmtCop = (value: number) =>
+    new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: "COP",
+      maximumFractionDigits: 0,
+    }).format(value);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -213,8 +255,30 @@ export default async function DashboardPage() {
                 <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="text-xs text-muted-foreground">Finanzas</span>
               </div>
-              <p className="text-sm font-semibold text-muted-foreground">Ver</p>
+              <p className="text-sm font-semibold text-emerald-300">{net14 >= 0 ? "+" : ""}{fmtCop(net14)}</p>
             </div>
+          </div>
+
+          <div className="glass rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <DollarSign className="w-4 h-4 text-emerald-400" />
+              <h3 className="font-semibold text-sm">Finanzas (14 días)</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+              <div className="rounded-lg bg-green-500/10 border border-green-500/20 px-2.5 py-2">
+                <p className="text-muted-foreground">Ingresos</p>
+                <p className="text-green-300 font-semibold mt-0.5">{fmtCop(income14)}</p>
+              </div>
+              <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-2.5 py-2">
+                <p className="text-muted-foreground">Gastos</p>
+                <p className="text-red-300 font-semibold mt-0.5">{fmtCop(expense14)}</p>
+              </div>
+              <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-2 col-span-2">
+                <p className="text-muted-foreground">Ingresos Shopify</p>
+                <p className="text-cyan-300 font-semibold mt-0.5">{fmtCop(shopifyIncome14)}</p>
+              </div>
+            </div>
+            <FinanceTrendChart data={financeTrend} />
           </div>
 
           {/* AI Insight */}
@@ -238,7 +302,7 @@ export default async function DashboardPage() {
           {/* 7-day trend */}
           <div className="glass rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-3">
-              <TrendingUp className="w-4 h-4 text-violet-400" />
+              <TrendingDown className="w-4 h-4 text-violet-400" />
               <h3 className="font-semibold text-sm">Tendencia 7 días</h3>
             </div>
             <TrendChart data={weekMetrics ?? []} />

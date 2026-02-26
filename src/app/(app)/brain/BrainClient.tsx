@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { Plus, X, Check, Brain, Search, Code2, FileText, Link2, Trash2 } from "lucide-react";
+import { Plus, X, Check, Brain, Search, Code2, FileText, Link2, Trash2, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -40,6 +40,8 @@ export function BrainClient({ initialNotes, areas }: BrainClientProps) {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "note" | "snippet" | "resource">("all");
   const [loading, setLoading] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
   const [form, setForm] = useState({
     title: "", content: "",
     type: "note" as "note" | "snippet" | "resource",
@@ -60,6 +62,42 @@ export function BrainClient({ initialNotes, areas }: BrainClientProps) {
     }
     return list;
   }, [notes, filterType, search]);
+
+  async function handleResourceUpload(file: File) {
+    if (!file) return;
+    setUploadMsg("");
+    setUploadingFile(true);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setUploadingFile(false);
+      setUploadMsg("Debes iniciar sesión para subir archivos.");
+      return;
+    }
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const path = `${user.id}/${Date.now()}-${safeName}`;
+    const { error } = await supabase.storage.from("brain-files").upload(path, file, { upsert: false });
+
+    if (error) {
+      setUploadMsg("No se pudo subir el archivo. Verifica bucket/políticas de storage.");
+      setUploadingFile(false);
+      return;
+    }
+
+    const { data } = supabase.storage.from("brain-files").getPublicUrl(path);
+    const title = file.name.replace(/\.[^.]+$/, "");
+    setForm((prev) => ({
+      ...prev,
+      type: "resource",
+      title: prev.title.trim() ? prev.title : title,
+      content: data.publicUrl,
+    }));
+    setUploadingFile(false);
+    setUploadMsg("Archivo subido ✅");
+  }
 
   async function handleSave() {
     if (!form.title.trim() || !form.content.trim()) return;
@@ -179,6 +217,30 @@ export function BrainClient({ initialNotes, areas }: BrainClientProps) {
             >
               {LANGS.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
+          )}
+          {form.type === "resource" && (
+            <div className="rounded-xl border border-dashed border-border p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs border border-border hover:bg-accent cursor-pointer transition-colors">
+                  <Upload className="w-3.5 h-3.5" />
+                  {uploadingFile ? "Subiendo..." : "Subir archivo"}
+                  <input
+                    type="file"
+                    className="hidden"
+                    disabled={uploadingFile}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleResourceUpload(file);
+                      }
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+                <span className="text-xs text-muted-foreground">PDF, imágenes, docs y otros archivos.</span>
+              </div>
+              {uploadMsg && <p className="text-xs text-muted-foreground mt-2">{uploadMsg}</p>}
+            </div>
           )}
           <textarea
             value={form.content}
