@@ -20,7 +20,7 @@
 | 📊 **Metrics** | Registro diario de mood, peso, sueño, energía y calorías; gráficas de tendencia |
 | 💰 **Finances** | Ingresos/gastos con categorías; integración opcional con Shopify webhook |
 | 🧠 **Brain** | Base de conocimiento: snippets, notas y recursos con tags y búsqueda |
-| 🤖 **AI Chat** | Chat en tiempo real con Google Gemini 2.0 Flash; guarda insights en DB automáticamente |
+| 🤖 **AI Chat** | Chat en tiempo real con Google Gemini 2.5 Flash (fallback a 2.0); guarda insights en DB automáticamente |
 | ⚡ **Quick Capture** | Captura en lenguaje natural → Gemini clasifica y guarda en la tabla correcta (tarea/métrica/gasto/nota) |
 | 👥 **CRM** | Contactos, interacciones y seguimiento de relaciones personales/profesionales |
 | 🌿 **Skills** | Árbol de habilidades con niveles y categorías |
@@ -47,7 +47,7 @@
 | **UI Runtime** | React | `^19.0.0` | Server + Client Components |
 | **Base de datos** | Supabase (PostgreSQL) | `^2.48.1` | DB relacional + Auth + RLS |
 | **Auth SSR** | @supabase/ssr | `^0.5.2` | Cookies-based session en App Router |
-| **IA Generativa** | Google Generative AI | `^0.21.0` | Gemini 2.0 Flash (API v1beta) |
+| **IA Generativa** | Google Generative AI | `^0.21.0` | Gemini 2.5 Flash + fallback 2.0 (API v1beta) |
 | **Estado global** | Zustand | `^5.0.3` | Estado del cliente ligero |
 | **Data fetching** | TanStack Query | `^5.62.7` | Cache, refetch y estado async |
 | **Offline/Cache** | Dexie (IndexedDB) | `^4.0.9` | Persistencia local offline-first |
