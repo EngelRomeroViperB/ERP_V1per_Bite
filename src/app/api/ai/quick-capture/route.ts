@@ -184,6 +184,23 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("preferences")
+      .eq("id", user.id)
+      .maybeSingle();
+    const preferences = (profile?.preferences ?? {}) as Record<string, unknown>;
+    const preferredPriorityRaw = typeof preferences.quick_capture_default_priority === "string"
+      ? preferences.quick_capture_default_priority
+      : "P3";
+    const preferredPriority = normalizeTaskPriority(preferredPriorityRaw);
+    const autoTags = Array.isArray(preferences.quick_capture_auto_tags)
+      ? preferences.quick_capture_auto_tags
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+          .slice(0, 12)
+      : [];
+
     const body = await req.json();
     const text: unknown = body?.text;
     if (typeof text !== "string" || text.trim().length === 0) {
@@ -252,7 +269,7 @@ export async function POST(req: NextRequest) {
       const { error } = await supabase.from("tasks").insert({
         user_id: user.id,
         title: parsed.title ?? inputText.slice(0, 100),
-        priority: normalizeTaskPriority(parsed.priority),
+        priority: normalizeTaskPriority(parsed.priority ?? preferredPriority),
         status: "todo",
       });
       if (error) throw error;
@@ -320,7 +337,7 @@ export async function POST(req: NextRequest) {
           title: inputText.slice(0, 80),
           content: inputText,
           type: "note",
-          tags: [],
+          tags: autoTags,
         });
         if (error) throw error;
         savedType = "note";
@@ -332,7 +349,7 @@ export async function POST(req: NextRequest) {
         title: parsed.title ?? inputText.slice(0, 80),
         content: parsed.content ?? inputText,
         type: "note",
-        tags: [],
+        tags: autoTags,
       });
       if (error) throw error;
       label = "Nota en Brain";

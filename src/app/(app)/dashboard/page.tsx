@@ -19,6 +19,28 @@ export default async function DashboardPage() {
   const today = format(new Date(), "yyyy-MM-dd");
   const displayDate = format(new Date(), "EEEE, d 'de' MMMM", { locale: es });
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("preferences")
+    .single();
+  const preferences = (profile?.preferences ?? {}) as Record<string, unknown>;
+
+  const configuredTrendDays = Number(preferences.dashboard_trend_days ?? 7);
+  const trendDays = configuredTrendDays === 14 || configuredTrendDays === 30 ? configuredTrendDays : 7;
+  const trendStart = format(new Date(Date.now() - (trendDays - 1) * 86400000), "yyyy-MM-dd");
+
+  const financeCurrency = typeof preferences.finance_currency === "string" ? preferences.finance_currency : "COP";
+  const financeLocale = typeof preferences.finance_locale === "string" ? preferences.finance_locale : "es-CO";
+  const financeUseGrouping = typeof preferences.finance_use_grouping === "boolean" ? preferences.finance_use_grouping : true;
+
+  const defaultCards = ["mood", "weight", "kcal", "finance"];
+  const dashboardVisibleCards = Array.isArray(preferences.dashboard_visible_cards)
+    ? preferences.dashboard_visible_cards.filter((item): item is string => typeof item === "string")
+    : defaultCards;
+  const dashboardCardOrder = Array.isArray(preferences.dashboard_card_order)
+    ? preferences.dashboard_card_order.filter((item): item is string => typeof item === "string")
+    : defaultCards;
+
   const { data: todayTasks } = await supabase
     .from("tasks")
     .select("*")
@@ -48,14 +70,13 @@ export default async function DashboardPage() {
     .limit(1)
     .maybeSingle();
 
-  const week7Start = format(new Date(Date.now() - 6 * 86400000), "yyyy-MM-dd");
   const days14Start = format(new Date(Date.now() - 13 * 86400000), "yyyy-MM-dd");
 
   const [{ data: habits }, { data: weekMetrics }] = await Promise.all([
     supabase.from("habits").select("*").eq("frequency", "daily").order("created_at"),
     supabase.from("daily_metrics")
       .select("metric_date, mood_score, energy_level, sleep_hours")
-      .gte("metric_date", week7Start)
+      .gte("metric_date", trendStart)
       .order("metric_date"),
   ]);
 
@@ -104,11 +125,63 @@ export default async function DashboardPage() {
     .reduce((sum, tx) => sum + Number(tx.amount ?? 0), 0);
 
   const fmtCop = (value: number) =>
-    new Intl.NumberFormat("es-CO", {
+    new Intl.NumberFormat(financeLocale, {
       style: "currency",
-      currency: "COP",
+      currency: financeCurrency,
       maximumFractionDigits: 0,
+      useGrouping: financeUseGrouping,
     }).format(value);
+
+  const kpiMap = {
+    mood: (
+      <div className="glass rounded-xl p-4" key="mood">
+        <div className="flex items-center gap-1.5 mb-1">
+          <Activity className="w-3.5 h-3.5 text-primary" />
+          <span className="text-xs text-muted-foreground">Mood</span>
+        </div>
+        <p className="text-2xl font-bold">
+          {latestMetric?.mood_score ?? "—"}
+          {latestMetric?.mood_score && <span className="text-xs text-muted-foreground ml-1">/10</span>}
+        </p>
+      </div>
+    ),
+    weight: (
+      <div className="glass rounded-xl p-4" key="weight">
+        <div className="flex items-center gap-1.5 mb-1">
+          <TrendingUp className="w-3.5 h-3.5 text-green-400" />
+          <span className="text-xs text-muted-foreground">Peso</span>
+        </div>
+        <p className="text-2xl font-bold">
+          {latestMetric?.weight_kg ?? "—"}
+          {latestMetric?.weight_kg && <span className="text-xs text-muted-foreground ml-1">kg</span>}
+        </p>
+      </div>
+    ),
+    kcal: (
+      <div className="glass rounded-xl p-4" key="kcal">
+        <div className="flex items-center gap-1.5 mb-1">
+          <Flame className="w-3.5 h-3.5 text-orange-400" />
+          <span className="text-xs text-muted-foreground">Kcal</span>
+        </div>
+        <p className="text-2xl font-bold">
+          {latestMetric?.calories_kcal ? (latestMetric.calories_kcal / 1000).toFixed(1) + "k" : "—"}
+        </p>
+      </div>
+    ),
+    finance: (
+      <div className="glass rounded-xl p-4" key="finance">
+        <div className="flex items-center gap-1.5 mb-1">
+          <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="text-xs text-muted-foreground">Finanzas</span>
+        </div>
+        <p className="text-sm font-semibold text-emerald-300">{net14 >= 0 ? "+" : ""}{fmtCop(net14)}</p>
+      </div>
+    ),
+  } as const;
+
+  const kpiCards = dashboardCardOrder
+    .filter((key) => dashboardVisibleCards.includes(key) && key in kpiMap)
+    .map((key) => kpiMap[key as keyof typeof kpiMap]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -215,48 +288,7 @@ export default async function DashboardPage() {
         <div className="space-y-5">
           {/* KPIs */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="glass rounded-xl p-4">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Activity className="w-3.5 h-3.5 text-primary" />
-                <span className="text-xs text-muted-foreground">Mood</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {latestMetric?.mood_score ?? "—"}
-                {latestMetric?.mood_score && (
-                  <span className="text-xs text-muted-foreground ml-1">/10</span>
-                )}
-              </p>
-            </div>
-            <div className="glass rounded-xl p-4">
-              <div className="flex items-center gap-1.5 mb-1">
-                <TrendingUp className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-xs text-muted-foreground">Peso</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {latestMetric?.weight_kg ?? "—"}
-                {latestMetric?.weight_kg && (
-                  <span className="text-xs text-muted-foreground ml-1">kg</span>
-                )}
-              </p>
-            </div>
-            <div className="glass rounded-xl p-4">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Flame className="w-3.5 h-3.5 text-orange-400" />
-                <span className="text-xs text-muted-foreground">Kcal</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {latestMetric?.calories_kcal
-                  ? (latestMetric.calories_kcal / 1000).toFixed(1) + "k"
-                  : "—"}
-              </p>
-            </div>
-            <div className="glass rounded-xl p-4">
-              <div className="flex items-center gap-1.5 mb-1">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-xs text-muted-foreground">Finanzas</span>
-              </div>
-              <p className="text-sm font-semibold text-emerald-300">{net14 >= 0 ? "+" : ""}{fmtCop(net14)}</p>
-            </div>
+            {kpiCards}
           </div>
 
           <div className="glass rounded-2xl p-5">
@@ -299,11 +331,11 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {/* 7-day trend */}
+          {/* Trend */}
           <div className="glass rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-3">
               <TrendingDown className="w-4 h-4 text-violet-400" />
-              <h3 className="font-semibold text-sm">Tendencia 7 días</h3>
+              <h3 className="font-semibold text-sm">Tendencia {trendDays} días</h3>
             </div>
             <TrendChart data={weekMetrics ?? []} />
           </div>

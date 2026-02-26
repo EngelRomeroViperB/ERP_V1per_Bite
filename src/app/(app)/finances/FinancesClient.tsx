@@ -23,9 +23,15 @@ type Transaction = {
 interface FinancesClientProps {
   initialTransactions: Transaction[];
   categories: Category[];
+  financePreferences: {
+    currency: string;
+    locale: string;
+    useGrouping: boolean;
+    dailySpendLimit: number;
+  };
 }
 
-export function FinancesClient({ initialTransactions, categories }: FinancesClientProps) {
+export function FinancesClient({ initialTransactions, categories, financePreferences }: FinancesClientProps) {
   const supabase = createClient();
   const [txs, setTxs] = useState<Transaction[]>(initialTransactions);
   const [showForm, setShowForm] = useState(false);
@@ -93,7 +99,21 @@ export function FinancesClient({ initialTransactions, categories }: FinancesClie
   }
 
   const fmt = (n: number) =>
-    new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
+    new Intl.NumberFormat(financePreferences.locale, {
+      style: "currency",
+      currency: financePreferences.currency,
+      maximumFractionDigits: 0,
+      useGrouping: financePreferences.useGrouping,
+    }).format(n);
+
+  const today = format(new Date(), "yyyy-MM-dd");
+  const todayExpense = txs
+    .filter((t) => t.type === "expense" && t.transaction_date === today)
+    .reduce((sum, t) => sum + t.amount, 0);
+  const spendProgress =
+    financePreferences.dailySpendLimit > 0
+      ? Math.min(100, (todayExpense / financePreferences.dailySpendLimit) * 100)
+      : 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -110,6 +130,23 @@ export function FinancesClient({ initialTransactions, categories }: FinancesClie
           Registrar
         </button>
       </div>
+
+      {financePreferences.dailySpendLimit > 0 && (
+        <div className="glass rounded-2xl p-4">
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="text-muted-foreground">Gasto de hoy</span>
+            <span className={cn("font-semibold", todayExpense > financePreferences.dailySpendLimit ? "text-red-400" : "text-emerald-400")}>
+              {fmt(todayExpense)} / {fmt(financePreferences.dailySpendLimit)}
+            </span>
+          </div>
+          <div className="h-2 rounded-full bg-secondary overflow-hidden">
+            <div
+              className={cn("h-full rounded-full", todayExpense > financePreferences.dailySpendLimit ? "bg-red-500" : "bg-emerald-500")}
+              style={{ width: `${spendProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -173,7 +210,7 @@ export function FinancesClient({ initialTransactions, categories }: FinancesClie
               className="px-4 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm" />
             <input type="number" value={form.amount}
               onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))}
-              placeholder="Monto (COP)" min={0} step={1000}
+              placeholder={`Monto (${financePreferences.currency})`} min={0} step={1000}
               className="px-4 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm" />
             <select value={form.category_id}
               onChange={(e) => setForm((p) => ({ ...p, category_id: e.target.value }))}
