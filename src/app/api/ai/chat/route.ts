@@ -40,7 +40,10 @@ export async function POST(req: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel(
+      { model: "gemini-1.5-flash" },
+      { apiVersion: "v1" }
+    );
 
     const systemPrompt = `Eres un asistente personal de productividad y bienestar para un sistema ERP personal llamado "ERP de Vida". 
 Tu rol es ayudar al usuario a:

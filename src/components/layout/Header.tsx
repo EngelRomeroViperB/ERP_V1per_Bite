@@ -25,6 +25,7 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [captureText, setCaptureText] = useState("");
   const [captureStatus, setCaptureStatus] = useState<"idle" | "saving" | "ok" | "err">("idle");
+  const [captureLabel, setCaptureLabel] = useState("Guardado");
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -71,25 +72,24 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
   async function handleQuickCapture() {
     if (!captureText.trim() || captureStatus === "saving") return;
     setCaptureStatus("saving");
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setCaptureStatus("err"); return; }
-    const title = captureText.trim().slice(0, 80);
-    const { error } = await supabase.from("brain_notes").insert({
-      user_id: user.id,
-      title,
-      content: captureText.trim(),
-      type: "note",
-      tags: [],
-    });
-    if (error) {
-      setCaptureStatus("err");
-    } else {
+    try {
+      const res = await fetch("/api/ai/quick-capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: captureText.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al guardar");
+      setCaptureLabel(data.label ?? "Guardado");
       setCaptureStatus("ok");
       setTimeout(() => {
         setShowQuickCapture(false);
         setCaptureText("");
         setCaptureStatus("idle");
-      }, 1200);
+        setCaptureLabel("Guardado");
+      }, 1400);
+    } catch {
+      setCaptureStatus("err");
     }
   }
 
@@ -253,7 +253,7 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
                 disabled={!captureText.trim() || captureStatus === "saving" || captureStatus === "ok"}
                 className="px-4 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                {captureStatus === "saving" ? "Guardando..." : captureStatus === "ok" ? "✓ Guardado" : "Guardar en Brain"}
+                {captureStatus === "saving" ? "Clasificando..." : captureStatus === "ok" ? `✓ ${captureLabel}` : "Procesar con IA"}
               </button>
             </div>
           </div>
