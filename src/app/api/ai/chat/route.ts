@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  GEMINI_API_VERSION,
+  getGeminiModelCandidates,
+  isGeminiQuotaError,
+} from "@/lib/gemini";
 
 export const runtime = "nodejs";
 
@@ -40,11 +45,7 @@ export async function POST(req: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel(
-      { model: "gemini-2.0-flash" },
-      { apiVersion: "v1beta" }
-    );
-
+    const modelCandidates = getGeminiModelCandidates();
     const systemPrompt = `Eres un asistente personal de productividad y bienestar para un sistema ERP personal llamado "ERP de Vida". 
 Tu rol es ayudar al usuario a:
 - Analizar su productividad y progreso en tareas y proyectos
@@ -63,29 +64,58 @@ Sé directo y personalizado. Usa emojis con moderación.`;
         parts: [{ text: m.content }],
       }));
 
-    const chat = model.startChat({
-      history: [
-        { role: "user", parts: [{ text: systemPrompt }] },
-        { role: "model", parts: [{ text: "Entendido. Estoy listo para ayudarte con tu ERP de vida personal." }] },
-        ...chatHistory,
-      ],
-    });
+    let lastModelError = "";
+    let quotaErrorDetected = false;
 
-    const result = await chat.sendMessage(message);
-    const reply = result.response.text();
+    for (const modelName of modelCandidates) {
+      try {
+        const model = genAI.getGenerativeModel(
+          { model: modelName },
+          { apiVersion: GEMINI_API_VERSION }
+        );
 
-    // Store insight if response seems relevant
-    if (reply.length > 100) {
-      await supabase.from("ai_insights").insert({
-        user_id: user.id,
-        insight_type: "chat_insight",
-        content: reply.slice(0, 500),
-        data_snapshot: { user_message: message },
-        confidence_score: 0.8,
-      });
+        const chat = model.startChat({
+          history: [
+            { role: "user", parts: [{ text: systemPrompt }] },
+            { role: "model", parts: [{ text: "Entendido. Estoy listo para ayudarte con tu ERP de vida personal." }] },
+            ...chatHistory,
+          ],
+        });
+
+        const result = await chat.sendMessage(message);
+        const reply = result.response.text();
+
+        if (reply.length > 100) {
+          await supabase.from("ai_insights").insert({
+            user_id: user.id,
+            insight_type: "chat_insight",
+            content: reply.slice(0, 500),
+            data_snapshot: { user_message: message },
+            confidence_score: 0.8,
+          });
+        }
+
+        return NextResponse.json({ reply });
+      } catch (modelError) {
+        const msg = modelError instanceof Error ? modelError.message : String(modelError);
+        lastModelError = msg;
+        if (isGeminiQuotaError(msg)) {
+          quotaErrorDetected = true;
+        }
+      }
     }
 
-    return NextResponse.json({ reply });
+    if (quotaErrorDetected) {
+      return NextResponse.json(
+        {
+          reply:
+            "⚠️ Tu API Key de Gemini no tiene cuota disponible ahora mismo. Activa billing en Google AI Studio o espera el reset de cuota para reactivar el chat.",
+        },
+        { status: 200 }
+      );
+    }
+
+    throw new Error(lastModelError || "No fue posible generar respuesta con ningún modelo de Gemini.");
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : "Unknown error";
     console.error("AI chat error:", errMsg);
