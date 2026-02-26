@@ -9,6 +9,46 @@ import {
 
 export const runtime = "nodejs";
 
+function buildLocalFallbackReply(message: string) {
+  const text = message.toLowerCase();
+
+  if (text.includes("foco") || text.includes("prioridad") || text.includes("hoy")) {
+    return [
+      "Plan rápido para hoy:",
+      "1) Elige 1 tarea P1 (máximo 90 min) y ejecútala primero.",
+      "2) Define 2 tareas P2 cortas (15-30 min) para cerrar el día.",
+      "3) Reserva 10 min al final para revisión y captura de pendientes.",
+    ].join("\n");
+  }
+
+  if (text.includes("habito") || text.includes("hábito")) {
+    return [
+      "Sugerencia de hábitos (mínimo viable):",
+      "- 5 min de movimiento al despertar",
+      "- 2 bloques de foco de 25 min",
+      "- Cierre del día: 3 líneas de diario + plan de mañana",
+    ].join("\n");
+  }
+
+  if (text.includes("estres") || text.includes("estrés") || text.includes("ansiedad")) {
+    return [
+      "Protocolo corto de regulación:",
+      "1) Respiración 4-4-6 por 2 minutos",
+      "2) Divide tu pendiente principal en un primer paso de 5 minutos",
+      "3) Empieza ese paso ahora y reevalúa en 10 minutos",
+    ].join("\n");
+  }
+
+  return [
+    "Estoy en modo contingencia (sin cuota de Gemini).",
+    "Si quieres, te ayudo con este formato:",
+    "- Objetivo de hoy",
+    "- Bloque de tiempo disponible",
+    "- Obstáculo principal",
+    "Con eso te devuelvo un plan accionable.",
+  ].join("\n");
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
@@ -37,8 +77,11 @@ export async function POST(req: NextRequest) {
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         {
-          reply:
-            "⚠️ La clave GEMINI_API_KEY no está configurada en `.env.local`. Por favor agrégala para activar el asistente IA.",
+          reply: [
+            "⚠️ La clave GEMINI_API_KEY no está configurada.",
+            "",
+            buildLocalFallbackReply(message),
+          ].join("\n"),
         },
         { status: 200 }
       );
@@ -108,8 +151,12 @@ Sé directo y personalizado. Usa emojis con moderación.`;
     if (quotaErrorDetected) {
       return NextResponse.json(
         {
-          reply:
-            "⚠️ Tu API Key de Gemini no tiene cuota disponible ahora mismo. Activa billing en Google AI Studio o espera el reset de cuota para reactivar el chat.",
+          reply: [
+            "⚠️ Tu API Key de Gemini no tiene cuota disponible ahora mismo.",
+            "Activa billing en Google AI Studio o espera el reset de cuota para reactivar IA completa.",
+            "",
+            buildLocalFallbackReply(message),
+          ].join("\n"),
         },
         { status: 200 }
       );
