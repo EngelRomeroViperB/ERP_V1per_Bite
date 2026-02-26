@@ -13,6 +13,14 @@ const QUICK_PROMPTS = [
   "¿Cómo puedo mejorar mi rutina matutina?",
 ];
 
+function toReadableAssistantText(text: string) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s*/gm, "")
+    .trim();
+}
+
 export function NlpClient() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -53,7 +61,10 @@ export function NlpClient() {
         setContingencyMode(true);
       }
 
-      setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: toReadableAssistantText(replyText) },
+      ]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error desconocido";
       setMessages((prev) => [

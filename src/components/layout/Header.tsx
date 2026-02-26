@@ -2,8 +2,26 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { Bell, LogOut, Plus, Zap, X, CheckCheck, Menu } from "lucide-react";
+import { Bell, LogOut, Plus, Zap, X, CheckCheck, Menu, Mic, MicOff } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
+
+type SpeechRecognitionCtor = new () => {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  }
+}
 
 interface Notification {
   id: string;
@@ -26,9 +44,12 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
   const [captureText, setCaptureText] = useState("");
   const [captureStatus, setCaptureStatus] = useState<"idle" | "saving" | "ok" | "err">("idle");
   const [captureLabel, setCaptureLabel] = useState("Guardado");
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<InstanceType<SpeechRecognitionCtor> | null>(null);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
@@ -45,6 +66,60 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    setSpeechSupported(Boolean(recognition));
+  }, []);
+
+  useEffect(() => {
+    if (!showQuickCapture && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  }, [showQuickCapture]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
+  function handleVoiceInput() {
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Recognition) return;
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "es-ES";
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i += 1) {
+        transcript += event.results[i][0]?.transcript ?? "";
+      }
+      setCaptureText((prev) => `${prev}${prev ? " " : ""}${transcript.trim()}`.trim());
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  }
 
   async function fetchNotifications() {
     const { data } = await supabase
@@ -238,6 +313,25 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
               placeholder='Ej: "Mañana entregar informe de estadística" o "Pesé 74.5kg hoy"'
               className="w-full h-28 px-4 py-3 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm resize-none placeholder:text-muted-foreground"
             />
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[11px] text-muted-foreground">
+                Tip: puedes dictar con el micrófono y luego procesar con IA.
+              </p>
+              {speechSupported && (
+                <button
+                  type="button"
+                  onClick={handleVoiceInput}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors ${
+                    isListening
+                      ? "border-red-500/40 bg-red-500/10 text-red-300"
+                      : "border-border hover:bg-accent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                  {isListening ? "Detener" : "Dictar"}
+                </button>
+              )}
+            </div>
             {captureStatus === "err" && (
               <p className="text-xs text-red-400 mt-2">Error al guardar. Inténtalo de nuevo.</p>
             )}

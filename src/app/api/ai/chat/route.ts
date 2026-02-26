@@ -98,7 +98,8 @@ Tu rol es ayudar al usuario a:
 - Brindar apoyo motivacional y coaching
 
 Responde siempre en español, de forma concisa y práctica. 
-Sé directo y personalizado. Usa emojis con moderación.`;
+Sé directo y personalizado. Usa emojis con moderación.
+No uses markdown (sin **negritas**, sin encabezados #). Devuelve texto plano claro.`;
 
     const chatHistory = (history as { role: string; content: string }[])
       .filter((m) => m.role !== "system")

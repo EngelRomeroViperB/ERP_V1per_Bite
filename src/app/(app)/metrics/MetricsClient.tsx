@@ -26,6 +26,8 @@ type Metric = {
 
 interface MetricsClientProps {
   initialHistory: Metric[];
+  moodLabels: string[];
+  energyLabels: string[];
 }
 
 const FIELDS = [
@@ -40,7 +42,7 @@ const FIELDS = [
 
 type FieldKey = typeof FIELDS[number]["key"];
 
-export function MetricsClient({ initialHistory }: MetricsClientProps) {
+export function MetricsClient({ initialHistory, moodLabels, energyLabels }: MetricsClientProps) {
   const supabase = createClient();
   const today = format(new Date(), "yyyy-MM-dd");
   const todayRecord = initialHistory.find((m) => m.metric_date === today);
@@ -66,6 +68,17 @@ export function MetricsClient({ initialHistory }: MetricsClientProps) {
     const n = parseFloat(v);
     return isNaN(n) ? null : n;
   }
+
+  function getScaleLabel(labels: string[], scoreText: string) {
+    const score = Number(scoreText);
+    if (!Number.isFinite(score) || labels.length === 0) return "";
+    const clamped = Math.max(1, Math.min(10, Math.round(score)));
+    const idx = Math.round(((clamped - 1) / 9) * (labels.length - 1));
+    return labels[idx] ?? "";
+  }
+
+  const moodHint = getScaleLabel(moodLabels, form.mood_score);
+  const energyHint = getScaleLabel(energyLabels, form.energy_level);
 
   async function handleSave() {
     setSaving(true);
@@ -160,6 +173,12 @@ export function MetricsClient({ initialHistory }: MetricsClientProps) {
                 className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
               />
             </div>
+            {field.key === "mood_score" && moodHint && (
+              <p className="text-[11px] text-primary/80 mt-1">Etiqueta: {moodHint}</p>
+            )}
+            {field.key === "energy_level" && energyHint && (
+              <p className="text-[11px] text-primary/80 mt-1">Etiqueta: {energyHint}</p>
+            )}
           </div>
         ))}
         <div className="col-span-2 sm:col-span-3 lg:col-span-4">

@@ -28,15 +28,25 @@ const TIMEZONES = [
   "UTC",
 ];
 
+function parsePreferenceList(value: unknown) {
+  if (!Array.isArray(value)) return [] as string[];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
 export function SettingsClient({ initialProfile }: SettingsClientProps) {
   const supabase = createClient();
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(initialProfile);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const initialPreferences = (initialProfile?.preferences ?? {}) as Record<string, unknown>;
   const [form, setForm] = useState({
     full_name: initialProfile?.full_name ?? "",
     timezone: initialProfile?.timezone ?? "America/Bogota",
+    mood_labels: parsePreferenceList(initialPreferences.mood_labels).join(", "),
+    energy_labels: parsePreferenceList(initialPreferences.energy_labels).join(", "),
   });
 
   async function handleSave() {
@@ -45,7 +55,23 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
 
     await supabase
       .from("profiles")
-      .update({ full_name: form.full_name, timezone: form.timezone })
+      .update({
+        full_name: form.full_name,
+        timezone: form.timezone,
+        preferences: {
+          ...initialPreferences,
+          mood_labels: form.mood_labels
+            .split(",")
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .slice(0, 10),
+          energy_labels: form.energy_labels
+            .split(",")
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .slice(0, 10),
+        },
+      })
       .eq("id", profile.id);
 
     setSaving(false);
@@ -122,6 +148,36 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
           {saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
           {saved ? "Guardado" : saving ? "Guardando..." : "Guardar cambios"}
         </button>
+      </div>
+
+      {/* Personalization */}
+      <div className="glass rounded-2xl p-6 space-y-4">
+        <h3 className="font-semibold">Personalización</h3>
+        <p className="text-xs text-muted-foreground">
+          Define etiquetas personalizadas para escalas (separadas por coma). Ejemplo: "Muy mal, Mal, Neutral, Bien, Excelente".
+        </p>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Etiquetas de Mood (1-10)</label>
+          <input
+            type="text"
+            value={form.mood_labels}
+            onChange={(e) => setForm((p) => ({ ...p, mood_labels: e.target.value }))}
+            placeholder="Muy bajo, Bajo, Normal, Alto, Excelente"
+            className="w-full px-4 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Etiquetas de Energía (1-10)</label>
+          <input
+            type="text"
+            value={form.energy_labels}
+            onChange={(e) => setForm((p) => ({ ...p, energy_labels: e.target.value }))}
+            placeholder="Sin energía, Bajo, Funcional, Enfocado, Imparable"
+            className="w-full px-4 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+          />
+        </div>
       </div>
 
       {/* Notifications placeholder */}
