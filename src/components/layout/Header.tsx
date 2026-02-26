@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { Bell, LogOut, Plus, Zap, X, CheckCheck } from "lucide-react";
+import { Bell, LogOut, Plus, Zap, X, CheckCheck, Menu } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
 interface Notification {
@@ -16,9 +16,10 @@ interface Notification {
 
 interface HeaderProps {
   title?: string;
+  onMenuClick?: () => void;
 }
 
-export function Header({ title = "Dashboard" }: HeaderProps) {
+export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
   const supabase = createClient();
   const router = useRouter();
   const [showQuickCapture, setShowQuickCapture] = useState(false);
@@ -86,6 +87,14 @@ export function Header({ title = "Dashboard" }: HeaderProps) {
       <h1 className="text-lg font-semibold flex-1">{title}</h1>
 
       <div className="flex items-center gap-2">
+        {/* Mobile hamburger */}
+        <button
+          onClick={onMenuClick}
+          className="md:hidden p-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
         <button
           onClick={() => setShowQuickCapture(true)}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
