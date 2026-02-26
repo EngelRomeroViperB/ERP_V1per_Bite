@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { Bell, LogOut, Plus, Zap, X, CheckCheck, Menu, Mic, MicOff } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 type SpeechRecognitionCtor = new () => {
   continuous: boolean;
@@ -177,8 +178,8 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
     router.refresh();
   }
 
-  function timeAgo(dateStr: string) {
-    const diff = Date.now() - new Date(dateStr).getTime();
+  function timeAgo(dateIso: string) {
+    const diff = Date.now() - new Date(dateIso).getTime();
     const m = Math.floor(diff / 60000);
     if (m < 1) return "ahora";
     if (m < 60) return `${m}m`;
@@ -186,6 +187,79 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
     if (h < 24) return `${h}h`;
     return `${Math.floor(h / 24)}d`;
   }
+
+  const quickCaptureModal =
+    showQuickCapture && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm p-2 md:p-4"
+            onClick={() => setShowQuickCapture(false)}
+          >
+            <div
+              className="glass rounded-2xl p-5 md:p-6 w-full max-w-lg max-h-[88vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <Zap className="w-5 h-5 text-primary" />
+                <h2 className="text-lg font-semibold">Captura rápida</h2>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">
+                Escribe en lenguaje natural — el sistema lo clasifica automáticamente.
+              </p>
+              <textarea
+                autoFocus
+                value={captureText}
+                onChange={(e) => setCaptureText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && e.ctrlKey && handleQuickCapture()}
+                placeholder='Ej: "Mañana entregar informe de estadística" o "Pesé 74.5kg hoy"'
+                className="w-full h-28 px-4 py-3 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm resize-none placeholder:text-muted-foreground"
+              />
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-[11px] text-muted-foreground">
+                  Tip: puedes dictar con el micrófono y luego procesar con IA.
+                </p>
+                {speechSupported && (
+                  <button
+                    type="button"
+                    onClick={handleVoiceInput}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors ${
+                      isListening
+                        ? "border-red-500/40 bg-red-500/10 text-red-300"
+                        : "border-border hover:bg-accent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    {isListening ? "Detener" : "Dictar"}
+                  </button>
+                )}
+              </div>
+              {captureStatus === "err" && (
+                <p className="text-xs text-red-400 mt-2">Error al guardar. Inténtalo de nuevo.</p>
+              )}
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => {
+                    setShowQuickCapture(false);
+                    setCaptureText("");
+                    setCaptureStatus("idle");
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm hover:bg-accent transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleQuickCapture}
+                  disabled={!captureText.trim() || captureStatus === "saving" || captureStatus === "ok"}
+                  className="px-4 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
+                >
+                  {captureStatus === "saving" ? "Clasificando..." : captureStatus === "ok" ? `✓ ${captureLabel}` : "Procesar con IA"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
 
   return (
     <header className="h-14 flex items-center gap-4 px-6 border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-40">
@@ -292,70 +366,7 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
         </button>
       </div>
 
-      {showQuickCapture && (
-        <div
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm p-2 md:p-4"
-          onClick={() => setShowQuickCapture(false)}
-        >
-          <div
-            className="glass rounded-2xl p-5 md:p-6 w-full max-w-lg max-h-[88vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <Zap className="w-5 h-5 text-primary" />
-              <h2 className="text-lg font-semibold">Captura rápida</h2>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Escribe en lenguaje natural — el sistema lo clasifica automáticamente.
-            </p>
-            <textarea
-              autoFocus
-              value={captureText}
-              onChange={(e) => setCaptureText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && e.ctrlKey && handleQuickCapture()}
-              placeholder='Ej: "Mañana entregar informe de estadística" o "Pesé 74.5kg hoy"'
-              className="w-full h-28 px-4 py-3 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm resize-none placeholder:text-muted-foreground"
-            />
-            <div className="mt-2 flex items-center justify-between">
-              <p className="text-[11px] text-muted-foreground">
-                Tip: puedes dictar con el micrófono y luego procesar con IA.
-              </p>
-              {speechSupported && (
-                <button
-                  type="button"
-                  onClick={handleVoiceInput}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors ${
-                    isListening
-                      ? "border-red-500/40 bg-red-500/10 text-red-300"
-                      : "border-border hover:bg-accent text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                  {isListening ? "Detener" : "Dictar"}
-                </button>
-              )}
-            </div>
-            {captureStatus === "err" && (
-              <p className="text-xs text-red-400 mt-2">Error al guardar. Inténtalo de nuevo.</p>
-            )}
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={() => { setShowQuickCapture(false); setCaptureText(""); setCaptureStatus("idle"); }}
-                className="px-4 py-2 rounded-lg text-sm hover:bg-accent transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleQuickCapture}
-                disabled={!captureText.trim() || captureStatus === "saving" || captureStatus === "ok"}
-                className="px-4 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
-              >
-                {captureStatus === "saving" ? "Clasificando..." : captureStatus === "ok" ? `✓ ${captureLabel}` : "Procesar con IA"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {quickCaptureModal}
     </header>
   );
 }

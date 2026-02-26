@@ -35,6 +35,10 @@ function parsePreferenceList(value: unknown) {
     .filter(Boolean);
 }
 
+function parsePreferenceString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export function SettingsClient({ initialProfile }: SettingsClientProps) {
   const supabase = createClient();
   const router = useRouter();
@@ -50,9 +54,10 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
     timezone: initialProfile?.timezone ?? "America/Bogota",
     mood_labels: parsePreferenceList(initialPreferences.mood_labels).join(", "),
     energy_labels: parsePreferenceList(initialPreferences.energy_labels).join(", "),
+    push_public_key: parsePreferenceString(initialPreferences.push_vapid_public_key),
   });
 
-  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || form.push_public_key.trim();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -62,13 +67,17 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
       setPushStatus("No compatible en este navegador");
       return;
     }
+    if (!vapidKey) {
+      setPushStatus("Configura tu VAPID public key para activar push");
+      return;
+    }
     if (Notification.permission === "granted") {
       setPushStatus("Permiso concedido");
       setPushEnabled(true);
     } else if (Notification.permission === "denied") {
       setPushStatus("Permiso bloqueado en el navegador");
     }
-  }, []);
+  }, [vapidKey]);
 
   function base64ToUint8Array(base64: string) {
     const padded = (base64 + "=".repeat((4 - (base64.length % 4)) % 4))
@@ -167,6 +176,7 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
             .map((v) => v.trim())
             .filter(Boolean)
             .slice(0, 10),
+          push_vapid_public_key: form.push_public_key.trim() || null,
         },
       })
       .eq("id", profile.id);
@@ -287,12 +297,25 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
           Configura notificaciones push del navegador para recordatorios y alertas.
         </p>
         <p className="text-xs text-muted-foreground mb-3">
-          Requiere `NEXT_PUBLIC_VAPID_PUBLIC_KEY` y `VAPID_PRIVATE_KEY` en `.env.local`.
+          Puedes usar `NEXT_PUBLIC_VAPID_PUBLIC_KEY` en `.env.local` o guardar la clave pública aquí.
         </p>
+        <div className="mb-3 space-y-1.5">
+          <label className="block text-xs text-muted-foreground">VAPID public key</label>
+          <input
+            type="text"
+            value={form.push_public_key}
+            onChange={(e) => setForm((p) => ({ ...p, push_public_key: e.target.value }))}
+            placeholder="BEl... (clave pública VAPID)"
+            className="w-full px-3 py-2 rounded-lg bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-xs"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            La clave privada (`VAPID_PRIVATE_KEY`) debe vivir solo en servidor/Vercel.
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={enablePushNotifications}
-            disabled={pushBusy}
+            disabled={pushBusy || !vapidKey}
             className="px-3 py-2 rounded-lg text-xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
             {pushBusy ? "Configurando..." : "Activar push"}
