@@ -29,6 +29,7 @@ interface SkillsClientProps {
 export function SkillsClient({ initialNodes, initialEdges }: SkillsClientProps) {
   const supabase = createClient();
   const [nodes, setNodes] = useState<SkillNode[]>(initialNodes);
+  const edgeCount = initialEdges.length;
   const [showForm, setShowForm] = useState(false);
   const [filterStatus, setFilterStatus] = useState<"all" | SkillNode["status"]>("all");
   const [form, setForm] = useState({
@@ -102,7 +103,7 @@ export function SkillsClient({ initialNodes, initialEdges }: SkillsClientProps) 
         <div>
           <h2 className="text-2xl font-bold">Skill Tree</h2>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {mastered} dominadas · {learning} aprendiendo · {nodes.length} total
+            {mastered} dominadas · {learning} aprendiendo · {nodes.length} skills · {edgeCount} relaciones
           </p>
         </div>
         <button

@@ -55,6 +55,7 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
 
   useEffect(() => {
     fetchNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

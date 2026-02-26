@@ -38,7 +38,7 @@ function parsePreferenceList(value: unknown) {
 export function SettingsClient({ initialProfile }: SettingsClientProps) {
   const supabase = createClient();
   const router = useRouter();
-  const [profile, setProfile] = useState<Profile | null>(initialProfile);
+  const profile = initialProfile;
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -64,10 +64,11 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
     }
     if (Notification.permission === "granted") {
       setPushStatus("Permiso concedido");
+      setPushEnabled(true);
     } else if (Notification.permission === "denied") {
       setPushStatus("Permiso bloqueado en el navegador");
     }
-  });
+  }, []);
 
   function base64ToUint8Array(base64: string) {
     const padded = (base64 + "=".repeat((4 - (base64.length % 4)) % 4))
@@ -250,7 +251,7 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
       <div className="glass rounded-2xl p-6 space-y-4">
         <h3 className="font-semibold">Personalización</h3>
         <p className="text-xs text-muted-foreground">
-          Define etiquetas personalizadas para escalas (separadas por coma). Ejemplo: "Muy mal, Mal, Neutral, Bien, Excelente".
+          Define etiquetas personalizadas para escalas (separadas por coma). Ejemplo: &quot;Muy mal, Mal, Neutral, Bien, Excelente&quot;.
         </p>
 
         <div>
