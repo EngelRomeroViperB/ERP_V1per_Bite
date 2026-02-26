@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Send, Sparkles, Bot, User, Loader2, MessageSquare } from "lucide-react";
+import { Send, Sparkles, Bot, User, Loader2, MessageSquare, AlertTriangle } from "lucide-react";
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -23,6 +23,7 @@ export function NlpClient() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [contingencyMode, setContingencyMode] = useState(false);
 
   async function sendMessage(text?: string) {
     const msg = (text ?? input).trim();
@@ -42,6 +43,16 @@ export function NlpClient() {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error del servidor");
+      const replyText = String(data.reply ?? "");
+      const fallbackDetected =
+        replyText.includes("modo contingencia") ||
+        replyText.includes("no tiene cuota disponible") ||
+        replyText.includes("GEMINI_API_KEY no está configurada");
+
+      if (fallbackDetected) {
+        setContingencyMode(true);
+      }
+
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error desconocido";
@@ -66,6 +77,13 @@ export function NlpClient() {
             <p className="text-muted-foreground text-xs">Powered by Google Gemini</p>
           </div>
         </div>
+
+        {contingencyMode && (
+          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+            Modo contingencia activo: Gemini sin cuota/configuración. Respuestas en modo local.
+          </div>
+        )}
       </div>
 
       {/* Quick prompts */}
