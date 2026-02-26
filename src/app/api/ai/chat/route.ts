@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel(
-      { model: "gemini-1.5-flash" },
-      { apiVersion: "v1" }
+      { model: "gemini-2.0-flash" },
+      { apiVersion: "v1beta" }
     );
 
     const systemPrompt = `Eres un asistente personal de productividad y bienestar para un sistema ERP personal llamado "ERP de Vida". 
