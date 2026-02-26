@@ -84,11 +84,10 @@ Sé directo y personalizado. Usa emojis con moderación.`;
 
     return NextResponse.json({ reply });
   } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("AI chat error:", error);
-    }
+    const errMsg = error instanceof Error ? error.message : "Unknown error";
+    console.error("AI chat error:", errMsg);
     return NextResponse.json(
-      { error: "Error al procesar la solicitud" },
+      { error: `Error al procesar la solicitud: ${errMsg}` },
       { status: 500 }
     );
   }

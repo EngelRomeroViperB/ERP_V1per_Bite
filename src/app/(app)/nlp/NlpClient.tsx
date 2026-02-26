@@ -40,17 +40,14 @@ export function NlpClient() {
         body: JSON.stringify({ message: msg, history: messages }),
       });
 
-      if (!res.ok) throw new Error("Error del servidor");
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error del servidor");
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error desconocido";
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content:
-            "Lo siento, ocurrió un error al procesar tu solicitud. Por favor verifica que `GEMINI_API_KEY` esté configurada en `.env.local`.",
-        },
+        { role: "assistant", content: `⚠️ ${msg}` },
       ]);
     } finally {
       setLoading(false);

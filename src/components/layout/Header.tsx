@@ -23,6 +23,8 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
   const supabase = createClient();
   const router = useRouter();
   const [showQuickCapture, setShowQuickCapture] = useState(false);
+  const [captureText, setCaptureText] = useState("");
+  const [captureStatus, setCaptureStatus] = useState<"idle" | "saving" | "ok" | "err">("idle");
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -64,6 +66,31 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
     );
+  }
+
+  async function handleQuickCapture() {
+    if (!captureText.trim() || captureStatus === "saving") return;
+    setCaptureStatus("saving");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setCaptureStatus("err"); return; }
+    const title = captureText.trim().slice(0, 80);
+    const { error } = await supabase.from("brain_notes").insert({
+      user_id: user.id,
+      title,
+      content: captureText.trim(),
+      type: "note",
+      tags: [],
+    });
+    if (error) {
+      setCaptureStatus("err");
+    } else {
+      setCaptureStatus("ok");
+      setTimeout(() => {
+        setShowQuickCapture(false);
+        setCaptureText("");
+        setCaptureStatus("idle");
+      }, 1200);
+    }
   }
 
   async function handleSignOut() {
@@ -205,18 +232,28 @@ export function Header({ title = "Dashboard", onMenuClick }: HeaderProps) {
             </p>
             <textarea
               autoFocus
+              value={captureText}
+              onChange={(e) => setCaptureText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && e.ctrlKey && handleQuickCapture()}
               placeholder='Ej: "Mañana entregar informe de estadística" o "Pesé 74.5kg hoy"'
               className="w-full h-28 px-4 py-3 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm resize-none placeholder:text-muted-foreground"
             />
+            {captureStatus === "err" && (
+              <p className="text-xs text-red-400 mt-2">Error al guardar. Inténtalo de nuevo.</p>
+            )}
             <div className="flex justify-end gap-2 mt-4">
               <button
-                onClick={() => setShowQuickCapture(false)}
+                onClick={() => { setShowQuickCapture(false); setCaptureText(""); setCaptureStatus("idle"); }}
                 className="px-4 py-2 rounded-lg text-sm hover:bg-accent transition-colors"
               >
                 Cancelar
               </button>
-              <button className="px-4 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-                Procesar
+              <button
+                onClick={handleQuickCapture}
+                disabled={!captureText.trim() || captureStatus === "saving" || captureStatus === "ok"}
+                className="px-4 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
+              >
+                {captureStatus === "saving" ? "Guardando..." : captureStatus === "ok" ? "✓ Guardado" : "Guardar en Brain"}
               </button>
             </div>
           </div>
