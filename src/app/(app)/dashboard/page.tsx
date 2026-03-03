@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  Flame,
   DollarSign,
   Sparkles,
 } from "lucide-react";
@@ -10,6 +9,7 @@ import { FinanceTrendChart } from "./FinanceTrendChart";
 import { ActionButtons } from "@/components/notion/ActionButtons";
 import { NotionTasks } from "@/components/notion/NotionTasks";
 import { NotionProjects } from "@/components/notion/NotionProjects";
+import { DashboardHabits } from "./DashboardHabits";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -31,7 +31,7 @@ export default async function DashboardPage() {
   const [{ data: habits }, { data: habitLogs }, { data: recentFinances }, { data: latestInsight }] =
     await Promise.all([
       supabase.from("habits").select("*").eq("frequency", "daily").order("created_at"),
-      supabase.from("habit_logs").select("habit_id").eq("log_date", today).eq("completed", true),
+      supabase.from("habit_logs").select("*").eq("log_date", today),
       supabase
         .from("finances")
         .select("transaction_date, amount, type, source")
@@ -45,9 +45,8 @@ export default async function DashboardPage() {
         .maybeSingle(),
     ]);
 
-  const completedHabitIds = new Set((habitLogs ?? []).map((l) => l.habit_id));
   const dailyHabits = habits ?? [];
-  const completedCount = dailyHabits.filter((h) => completedHabitIds.has(h.id)).length;
+  const todayLogs = habitLogs ?? [];
 
   const dayMap = new Map<string, { income: number; expense: number }>();
   for (let i = 13; i >= 0; i -= 1) {
@@ -128,46 +127,8 @@ export default async function DashboardPage() {
           {/* Tasks from Notion */}
           <NotionTasks />
 
-          {/* Habits from Supabase */}
-          <div className="glass rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Flame className="w-5 h-5 text-orange-400" />
-              <h3 className="font-semibold">Hábitos de hoy</h3>
-              {dailyHabits.length > 0 && (
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {completedCount}/{dailyHabits.length}
-                </span>
-              )}
-            </div>
-            {dailyHabits.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                Configura tus hábitos en la sección de Hábitos
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {dailyHabits.map((habit) => {
-                  const done = completedHabitIds.has(habit.id);
-                  return (
-                    <div key={habit.id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-accent/50 transition-colors">
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${done ? "bg-orange-500 border-orange-500" : "border-border"}`}>
-                        {done && <span className="text-white text-xs">✓</span>}
-                      </div>
-                      <span className="text-sm">{habit.icon} {habit.name}</span>
-                      {done && <span className="ml-auto text-xs text-orange-400">✓</span>}
-                    </div>
-                  );
-                })}
-                {dailyHabits.length > 0 && (
-                  <div className="mt-3 h-1.5 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-orange-500 rounded-full transition-all"
-                      style={{ width: `${dailyHabits.length > 0 ? (completedCount / dailyHabits.length) * 100 : 0}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          {/* Habits from Supabase — interactive */}
+          <DashboardHabits initialHabits={dailyHabits} initialLogs={todayLogs} today={today} />
         </div>
 
         {/* Side Panel */}

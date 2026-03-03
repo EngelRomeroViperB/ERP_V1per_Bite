@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X, Check, Loader2 } from "lucide-react";
+import { X, Check, Loader2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type FieldType = "title" | "number" | "date" | "select" | "url";
@@ -21,6 +21,92 @@ interface NotionFormModalProps {
   icon: string;
   databaseId: string;
   fields: readonly FieldConfig[];
+}
+
+type SelectOption = { name: string; color: string };
+type OptionsMap = Record<string, SelectOption[]>;
+
+const NOTION_COLORS: Record<string, string> = {
+  default: "bg-zinc-500/20 text-zinc-300",
+  gray: "bg-zinc-500/20 text-zinc-300",
+  brown: "bg-amber-800/20 text-amber-400",
+  orange: "bg-orange-500/20 text-orange-400",
+  yellow: "bg-yellow-500/20 text-yellow-400",
+  green: "bg-green-500/20 text-green-400",
+  blue: "bg-blue-500/20 text-blue-400",
+  purple: "bg-purple-500/20 text-purple-400",
+  pink: "bg-pink-500/20 text-pink-400",
+  red: "bg-red-500/20 text-red-400",
+};
+
+function SelectDropdown({
+  options,
+  value,
+  onChange,
+  placeholder,
+}: {
+  options: SelectOption[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const selected = options.find((o) => o.name === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-secondary border border-border hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary text-sm transition-colors"
+      >
+        {selected ? (
+          <span className={cn("px-2 py-0.5 rounded-md text-xs font-medium", NOTION_COLORS[selected.color] || NOTION_COLORS.default)}>
+            {selected.name}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">{placeholder}</span>
+        )}
+        <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl bg-popover border border-border shadow-lg py-1 max-h-48 overflow-y-auto">
+          <button
+            type="button"
+            onClick={() => { onChange(""); setOpen(false); }}
+            className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
+          >
+            Sin valor
+          </button>
+          {options.map((opt) => (
+            <button
+              key={opt.name}
+              type="button"
+              onClick={() => { onChange(opt.name); setOpen(false); }}
+              className={cn(
+                "w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors flex items-center gap-2",
+                value === opt.name && "bg-accent"
+              )}
+            >
+              <span className={cn("px-2 py-0.5 rounded-md font-medium", NOTION_COLORS[opt.color] || NOTION_COLORS.default)}>
+                {opt.name}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function buildNotionProperties(
@@ -76,6 +162,30 @@ export function NotionFormModal({
   const [values, setValues] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [selectOptions, setSelectOptions] = useState<OptionsMap>({});
+  const [loadingOptions, setLoadingOptions] = useState(false);
+
+  const fetchOptions = useCallback(async () => {
+    const hasSelectFields = fields.some((f) => f.type === "select");
+    if (!hasSelectFields) return;
+
+    setLoadingOptions(true);
+    try {
+      const res = await fetch(`/api/notion/select-options?database_id=${databaseId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectOptions(data.options ?? {});
+      }
+    } catch {
+      // silently fail — user can still type manually
+    } finally {
+      setLoadingOptions(false);
+    }
+  }, [databaseId, fields]);
+
+  useEffect(() => {
+    if (isOpen) fetchOptions();
+  }, [isOpen, fetchOptions]);
 
   function handleChange(property: string, value: string) {
     setValues((prev) => ({ ...prev, [property]: value }));
@@ -149,46 +259,63 @@ export function NotionFormModal({
         </div>
 
         <div className="space-y-4">
-          {fields.map((field) => (
-            <div key={field.property}>
-              <label className="block text-xs text-muted-foreground mb-1.5">
-                {field.name}
-                {field.required && <span className="text-red-400 ml-0.5">*</span>}
-              </label>
-              {field.type === "title" || field.type === "url" ? (
-                <input
-                  type={field.type === "url" ? "url" : "text"}
-                  value={values[field.property] ?? ""}
-                  onChange={(e) => handleChange(field.property, e.target.value)}
-                  placeholder={field.type === "url" ? "https://..." : `${field.name}...`}
-                  className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                />
-              ) : field.type === "number" ? (
-                <input
-                  type="number"
-                  value={values[field.property] ?? ""}
-                  onChange={(e) => handleChange(field.property, e.target.value)}
-                  placeholder="0"
-                  className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                />
-              ) : field.type === "date" ? (
-                <input
-                  type="date"
-                  value={values[field.property] ?? new Date().toISOString().split("T")[0]}
-                  onChange={(e) => handleChange(field.property, e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                />
-              ) : field.type === "select" ? (
-                <input
-                  type="text"
-                  value={values[field.property] ?? ""}
-                  onChange={(e) => handleChange(field.property, e.target.value)}
-                  placeholder={`${field.name}...`}
-                  className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                />
-              ) : null}
-            </div>
-          ))}
+          {fields.map((field) => {
+            const options = selectOptions[field.property] ?? selectOptions[field.name] ?? [];
+
+            return (
+              <div key={field.property}>
+                <label className="block text-xs text-muted-foreground mb-1.5">
+                  {field.name}
+                  {field.required && <span className="text-red-400 ml-0.5">*</span>}
+                </label>
+                {field.type === "title" || field.type === "url" ? (
+                  <input
+                    type={field.type === "url" ? "url" : "text"}
+                    value={values[field.property] ?? ""}
+                    onChange={(e) => handleChange(field.property, e.target.value)}
+                    placeholder={field.type === "url" ? "https://..." : `${field.name}...`}
+                    className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                  />
+                ) : field.type === "number" ? (
+                  <input
+                    type="number"
+                    value={values[field.property] ?? ""}
+                    onChange={(e) => handleChange(field.property, e.target.value)}
+                    placeholder="0"
+                    className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                  />
+                ) : field.type === "date" ? (
+                  <input
+                    type="date"
+                    value={values[field.property] ?? new Date().toISOString().split("T")[0]}
+                    onChange={(e) => handleChange(field.property, e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                  />
+                ) : field.type === "select" ? (
+                  loadingOptions ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Cargando opciones...
+                    </div>
+                  ) : options.length > 0 ? (
+                    <SelectDropdown
+                      options={options}
+                      value={values[field.property] ?? ""}
+                      onChange={(v) => handleChange(field.property, v)}
+                      placeholder={`Seleccionar ${field.name.toLowerCase()}...`}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={values[field.property] ?? ""}
+                      onChange={(e) => handleChange(field.property, e.target.value)}
+                      placeholder={`${field.name}...`}
+                      className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                    />
+                  )
+                ) : null}
+              </div>
+            );
+          })}
         </div>
 
         {status === "error" && errorMsg && (

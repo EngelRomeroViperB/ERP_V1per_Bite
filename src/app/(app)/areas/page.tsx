@@ -1,13 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
-import { AreasClient } from "./AreasClient";
+import { NotionAreasPage } from "./NotionAreasPage";
 
-export default async function AreasPage() {
-  const supabase = await createClient();
-  const { data: areas } = await supabase
-    .from("areas")
-    .select("*")
-    .is("parent_id", null)
-    .order("order_index", { ascending: true });
-
-  return <AreasClient initialAreas={areas ?? []} />;
+export default function AreasPage() {
+  return <NotionAreasPage />;
 }

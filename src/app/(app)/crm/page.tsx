@@ -1,13 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
-import { CrmClient } from "./CrmClient";
+import { NotionCrmPage } from "./NotionCrmPage";
 
-export default async function CrmPage() {
-  const supabase = await createClient();
-
-  const { data: contacts } = await supabase
-    .from("crm_contacts")
-    .select("*")
-    .order("name");
-
-  return <CrmClient initialContacts={contacts ?? []} />;
+export default function CrmPage() {
+  return <NotionCrmPage />;
 }

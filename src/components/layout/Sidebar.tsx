@@ -8,13 +8,11 @@ import {
   CheckSquare,
   FolderKanban,
   Layers,
-  BarChart2,
   DollarSign,
   Brain,
   Users,
   GitBranch,
   Flame,
-  MessageSquare,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -28,12 +26,10 @@ const navItems = [
   { href: "/projects", label: "Proyectos", icon: FolderKanban },
   { href: "/areas", label: "Áreas", icon: Layers },
   { href: "/habits", label: "Hábitos", icon: Flame },
-  { href: "/metrics", label: "Métricas", icon: BarChart2 },
   { href: "/finances", label: "Finanzas", icon: DollarSign },
   { href: "/brain", label: "Brain", icon: Brain },
   { href: "/crm", label: "CRM", icon: Users },
   { href: "/skills", label: "Skills", icon: GitBranch },
-  { href: "/nlp", label: "Input NLP", icon: MessageSquare },
 ];
 
 interface SidebarProps {
