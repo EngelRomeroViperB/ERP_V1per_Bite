@@ -4,15 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X, Check, Loader2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type FieldType = "title" | "number" | "date" | "select" | "url";
-
-interface FieldConfig {
-  name: string;
-  property: string;
-  type: FieldType;
-  required: boolean;
-}
+import type { FieldConfig } from "@/lib/notion-databases";
 
 interface NotionFormModalProps {
   isOpen: boolean;
@@ -20,7 +12,7 @@ interface NotionFormModalProps {
   title: string;
   icon: string;
   databaseId: string;
-  fields: readonly FieldConfig[];
+  fields: FieldConfig[];
 }
 
 type SelectOption = { name: string; color: string };
@@ -109,8 +101,11 @@ function SelectDropdown({
   );
 }
 
+type RelationPage = { id: string; title: string };
+type RelationMap = Record<string, RelationPage[]>;
+
 function buildNotionProperties(
-  fields: readonly FieldConfig[],
+  fields: FieldConfig[],
   values: Record<string, string>
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
@@ -140,15 +135,108 @@ function buildNotionProperties(
           select: { name: value },
         };
         break;
+      case "status":
+        properties[field.property] = {
+          status: { name: value },
+        };
+        break;
       case "url":
         properties[field.property] = {
           url: value,
+        };
+        break;
+      case "relation":
+        properties[field.property] = {
+          relation: [{ id: value }],
         };
         break;
     }
   }
 
   return properties;
+}
+
+function RelationDropdown({
+  pages,
+  value,
+  onChange,
+  placeholder,
+}: {
+  pages: RelationPage[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const selected = pages.find((p) => p.id === value);
+  const filtered = search.trim()
+    ? pages.filter((p) => p.title.toLowerCase().includes(search.toLowerCase()))
+    : pages;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-secondary border border-border hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary text-sm transition-colors"
+      >
+        {selected ? (
+          <span className="text-sm truncate">{selected.title}</span>
+        ) : (
+          <span className="text-muted-foreground">{placeholder}</span>
+        )}
+        <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl bg-popover border border-border shadow-lg py-1 max-h-52 overflow-y-auto">
+          <div className="px-2 py-1">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar..."
+              className="w-full px-2 py-1.5 rounded-lg bg-secondary border border-border text-xs focus:outline-none"
+              autoFocus
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => { onChange(""); setOpen(false); setSearch(""); }}
+            className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-accent transition-colors"
+          >
+            Sin valor
+          </button>
+          {filtered.map((page) => (
+            <button
+              key={page.id}
+              type="button"
+              onClick={() => { onChange(page.id); setOpen(false); setSearch(""); }}
+              className={cn(
+                "w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors truncate",
+                value === page.id && "bg-accent"
+              )}
+            >
+              {page.title}
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <p className="px-3 py-2 text-xs text-muted-foreground">Sin resultados</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function NotionFormModal({
@@ -160,27 +248,55 @@ export function NotionFormModal({
   fields,
 }: NotionFormModalProps) {
   const [values, setValues] = useState<Record<string, string>>({});
-  const [status, setStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
+  const [formStatus, setFormStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [selectOptions, setSelectOptions] = useState<OptionsMap>({});
+  const [relationPages, setRelationPages] = useState<RelationMap>({});
   const [loadingOptions, setLoadingOptions] = useState(false);
 
   const fetchOptions = useCallback(async () => {
-    const hasSelectFields = fields.some((f) => f.type === "select");
-    if (!hasSelectFields) return;
-
-    setLoadingOptions(true);
-    try {
-      const res = await fetch(`/api/notion/select-options?database_id=${databaseId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSelectOptions(data.options ?? {});
-      }
-    } catch {
-      // silently fail — user can still type manually
-    } finally {
-      setLoadingOptions(false);
+    const hasDropdownFields = fields.some((f) => f.type === "select" || f.type === "status");
+    if (hasDropdownFields) {
+      setLoadingOptions(true);
+      try {
+        const res = await fetch(`/api/notion/select-options?database_id=${databaseId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSelectOptions(data.options ?? {});
+        }
+      } catch { /* ignore */ }
+      finally { setLoadingOptions(false); }
     }
+
+    const relationFields = fields.filter((f) => f.type === "relation" && f.relationDatabase);
+    const uniqueDbs = [...new Set(relationFields.map((f) => f.relationDatabase!))];
+    const newRelPages: RelationMap = {};
+
+    await Promise.all(
+      uniqueDbs.map(async (dbId) => {
+        try {
+          const res = await fetch("/api/notion/query-database", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ database_id: dbId, page_size: 100 }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            /* eslint-disable @typescript-eslint/no-explicit-any */
+            const pages: RelationPage[] = (data.results ?? []).map((p: any) => {
+              const props = p.properties ?? {};
+              const titleProp = Object.values(props).find((v: any) => v.type === "title") as any;
+              const t = titleProp?.title?.[0]?.plain_text ?? "Sin título";
+              return { id: p.id, title: t };
+            });
+            for (const f of relationFields) {
+              if (f.relationDatabase === dbId) newRelPages[f.property] = pages;
+            }
+          }
+        } catch { /* ignore */ }
+      })
+    );
+    setRelationPages((prev) => ({ ...prev, ...newRelPages }));
   }, [databaseId, fields]);
 
   useEffect(() => {
@@ -196,12 +312,12 @@ export function NotionFormModal({
     for (const f of requiredFields) {
       if (!values[f.property]?.trim()) {
         setErrorMsg(`"${f.name}" es requerido`);
-        setStatus("error");
+        setFormStatus("error");
         return;
       }
     }
 
-    setStatus("saving");
+    setFormStatus("saving");
     setErrorMsg("");
 
     try {
@@ -215,22 +331,22 @@ export function NotionFormModal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al guardar");
 
-      setStatus("ok");
+      setFormStatus("ok");
       setTimeout(() => {
         onClose();
         setValues({});
-        setStatus("idle");
+        setFormStatus("idle");
       }, 1200);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Error desconocido");
-      setStatus("error");
+      setFormStatus("error");
     }
   }
 
   function handleClose() {
     onClose();
     setValues({});
-    setStatus("idle");
+    setFormStatus("idle");
     setErrorMsg("");
   }
 
@@ -261,6 +377,7 @@ export function NotionFormModal({
         <div className="space-y-4">
           {fields.map((field) => {
             const options = selectOptions[field.property] ?? selectOptions[field.name] ?? [];
+            const relPages = relationPages[field.property] ?? [];
 
             return (
               <div key={field.property}>
@@ -291,7 +408,7 @@ export function NotionFormModal({
                     onChange={(e) => handleChange(field.property, e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
                   />
-                ) : field.type === "select" ? (
+                ) : field.type === "select" || field.type === "status" ? (
                   loadingOptions ? (
                     <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground">
                       <Loader2 className="w-3 h-3 animate-spin" /> Cargando opciones...
@@ -312,13 +429,26 @@ export function NotionFormModal({
                       className="w-full px-3 py-2.5 rounded-xl bg-secondary border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm"
                     />
                   )
+                ) : field.type === "relation" ? (
+                  relPages.length > 0 ? (
+                    <RelationDropdown
+                      pages={relPages}
+                      value={values[field.property] ?? ""}
+                      onChange={(v) => handleChange(field.property, v)}
+                      placeholder={`Seleccionar ${field.name.toLowerCase()}...`}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Cargando...
+                    </div>
+                  )
                 ) : null}
               </div>
             );
           })}
         </div>
 
-        {status === "error" && errorMsg && (
+        {formStatus === "error" && errorMsg && (
           <p className="text-xs text-red-400 mt-3">{errorMsg}</p>
         )}
 
@@ -331,20 +461,20 @@ export function NotionFormModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={status === "saving" || status === "ok"}
+            disabled={formStatus === "saving" || formStatus === "ok"}
             className={cn(
               "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-60",
-              status === "ok"
+              formStatus === "ok"
                 ? "bg-green-500/20 text-green-400"
                 : "bg-primary text-primary-foreground hover:bg-primary/90"
             )}
           >
-            {status === "saving" ? (
+            {formStatus === "saving" ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Guardando...
               </>
-            ) : status === "ok" ? (
+            ) : formStatus === "ok" ? (
               <>
                 <Check className="w-4 h-4" />
                 Guardado

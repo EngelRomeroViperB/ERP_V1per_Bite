@@ -10,42 +10,65 @@ export const NOTION_DATABASES = {
 
 export type NotionDatabaseKey = keyof typeof NOTION_DATABASES;
 
-export const ACTION_BUTTONS = [
+export type FieldType = "title" | "number" | "date" | "select" | "status" | "url" | "relation";
+
+export interface FieldConfig {
+  name: string;
+  property: string;
+  type: FieldType;
+  required: boolean;
+  relationDatabase?: string;
+}
+
+export const ACTION_BUTTONS: {
+  key: string;
+  label: string;
+  icon: string;
+  databaseId: string;
+  fields: FieldConfig[];
+}[] = [
   {
-    key: "transaccion" as const,
+    key: "transaccion",
     label: "Transacción",
     icon: "💰",
     databaseId: NOTION_DATABASES.FINANZAS,
     fields: [
-      { name: "Concepto", property: "title", type: "title" as const, required: true },
-      { name: "Valor", property: "Valor", type: "number" as const, required: true },
-      { name: "Fecha Transacción", property: "Fecha Transacción", type: "date" as const, required: false },
-      { name: "Categoria", property: "Categoria", type: "select" as const, required: false },
-      { name: "Tipo", property: "Tipo", type: "select" as const, required: false },
+      { name: "Concepto", property: "title", type: "title", required: true },
+      { name: "Valor", property: "Valor", type: "number", required: true },
+      { name: "Fecha Transacción", property: "Fecha Transacción", type: "date", required: false },
+      { name: "Categoria", property: "Categoria", type: "select", required: false },
+      { name: "Tipo", property: "Tipo", type: "select", required: false },
+      { name: "Área", property: "Área", type: "relation", required: false, relationDatabase: NOTION_DATABASES.AREAS },
     ],
   },
   {
-    key: "recurso" as const,
+    key: "recurso",
     label: "Up Recursos",
     icon: "📎",
     databaseId: NOTION_DATABASES.BRAIN,
     fields: [
-      { name: "Nombre", property: "title", type: "title" as const, required: true },
-      { name: "Tipo", property: "Tipo", type: "select" as const, required: false },
-      { name: "URL", property: "URL", type: "url" as const, required: false },
-      { name: "Estado", property: "Estado", type: "select" as const, required: false },
+      { name: "Nombre", property: "title", type: "title", required: true },
+      { name: "Tipo", property: "Tipo", type: "select", required: false },
+      { name: "URL", property: "URL", type: "url", required: false },
+      { name: "Estado", property: "Estado", type: "select", required: false },
+      { name: "Área", property: "Área", type: "relation", required: false, relationDatabase: NOTION_DATABASES.AREAS },
+      { name: "Habilidad", property: "Habilidad", type: "relation", required: false, relationDatabase: NOTION_DATABASES.SKILL_TREE },
+      { name: "Proyecto", property: "Proyecto", type: "relation", required: false, relationDatabase: NOTION_DATABASES.PROYECTOS },
     ],
   },
   {
-    key: "tarea" as const,
+    key: "tarea",
     label: "Up Tareas",
     icon: "✅",
     databaseId: NOTION_DATABASES.TAREAS,
     fields: [
-      { name: "Nombre", property: "title", type: "title" as const, required: true },
-      { name: "Prioridad", property: "Prioridad", type: "select" as const, required: false },
-      { name: "Esfuerzo", property: "Esfuerzo", type: "select" as const, required: false },
-      { name: "Fecha (Hacer)", property: "Fecha (Hacer)", type: "date" as const, required: false },
+      { name: "Nombre", property: "title", type: "title", required: true },
+      { name: "Status", property: "Status", type: "status", required: false },
+      { name: "Prioridad", property: "Prioridad", type: "select", required: false },
+      { name: "Esfuerzo", property: "Esfuerzo", type: "select", required: false },
+      { name: "Fecha (Hacer)", property: "Fecha Hacer", type: "date", required: false },
+      { name: "Proyecto", property: "Proyecto", type: "relation", required: false, relationDatabase: NOTION_DATABASES.PROYECTOS },
+      { name: "Áreas", property: "Áreas", type: "relation", required: false, relationDatabase: NOTION_DATABASES.AREAS },
     ],
   },
-] as const;
+];
