@@ -2,17 +2,14 @@ import { createClient } from "@/lib/supabase/server";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  CheckSquare,
   Flame,
-  TrendingUp,
-  TrendingDown,
   DollarSign,
   Sparkles,
-  Brain,
-  Activity,
 } from "lucide-react";
-import { TrendChart } from "./TrendChart";
 import { FinanceTrendChart } from "./FinanceTrendChart";
+import { ActionButtons } from "@/components/notion/ActionButtons";
+import { NotionTasks } from "@/components/notion/NotionTasks";
+import { NotionProjects } from "@/components/notion/NotionProjects";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -25,75 +22,29 @@ export default async function DashboardPage() {
     .single();
   const preferences = (profile?.preferences ?? {}) as Record<string, unknown>;
 
-  const configuredTrendDays = Number(preferences.dashboard_trend_days ?? 7);
-  const trendDays = configuredTrendDays === 14 || configuredTrendDays === 30 ? configuredTrendDays : 7;
-  const trendStart = format(new Date(Date.now() - (trendDays - 1) * 86400000), "yyyy-MM-dd");
-
   const financeCurrency = typeof preferences.finance_currency === "string" ? preferences.finance_currency : "COP";
   const financeLocale = typeof preferences.finance_locale === "string" ? preferences.finance_locale : "es-CO";
   const financeUseGrouping = typeof preferences.finance_use_grouping === "boolean" ? preferences.finance_use_grouping : true;
 
-  const defaultCards = ["mood", "weight", "kcal", "finance"];
-  const dashboardVisibleCards = Array.isArray(preferences.dashboard_visible_cards)
-    ? preferences.dashboard_visible_cards.filter((item): item is string => typeof item === "string")
-    : defaultCards;
-  const dashboardCardOrder = Array.isArray(preferences.dashboard_card_order)
-    ? preferences.dashboard_card_order.filter((item): item is string => typeof item === "string")
-    : defaultCards;
-
-  const { data: todayTasks } = await supabase
-    .from("tasks")
-    .select("*")
-    .in("status", ["todo", "in_progress"])
-    .lte("due_date", today)
-    .order("priority", { ascending: true })
-    .limit(10);
-
-  const { data: latestMetric } = await supabase
-    .from("daily_metrics")
-    .select("*")
-    .eq("metric_date", today)
-    .maybeSingle();
-
-  const { data: latestInsight } = await supabase
-    .from("ai_insights")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const { data: latestSnippet } = await supabase
-    .from("brain_notes")
-    .select("*")
-    .eq("type", "snippet")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
   const days14Start = format(new Date(Date.now() - 13 * 86400000), "yyyy-MM-dd");
 
-  const [{ data: habits }, { data: weekMetrics }] = await Promise.all([
-    supabase.from("habits").select("*").eq("frequency", "daily").order("created_at"),
-    supabase.from("daily_metrics")
-      .select("metric_date, mood_score, energy_level, sleep_hours")
-      .gte("metric_date", trendStart)
-      .order("metric_date"),
-  ]);
+  const [{ data: habits }, { data: habitLogs }, { data: recentFinances }, { data: latestInsight }] =
+    await Promise.all([
+      supabase.from("habits").select("*").eq("frequency", "daily").order("created_at"),
+      supabase.from("habit_logs").select("habit_id").eq("log_date", today).eq("completed", true),
+      supabase
+        .from("finances")
+        .select("transaction_date, amount, type, source")
+        .gte("transaction_date", days14Start)
+        .order("transaction_date", { ascending: true }),
+      supabase
+        .from("ai_insights")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
-  const { data: habitLogs } = await supabase
-    .from("habit_logs")
-    .select("habit_id")
-    .eq("log_date", today)
-    .eq("completed", true);
-
-  const { data: recentFinances } = await supabase
-    .from("finances")
-    .select("transaction_date, amount, type, source")
-    .gte("transaction_date", days14Start)
-    .order("transaction_date", { ascending: true });
-
-  const p1Tasks = todayTasks?.filter((t) => t.priority === "P1") ?? [];
-  const allTasks = todayTasks ?? [];
   const completedHabitIds = new Set((habitLogs ?? []).map((l) => l.habit_id));
   const dailyHabits = habits ?? [];
   const completedCount = dailyHabits.filter((h) => completedHabitIds.has(h.id)).length;
@@ -132,117 +83,52 @@ export default async function DashboardPage() {
       useGrouping: financeUseGrouping,
     }).format(value);
 
-  const kpiMap = {
-    mood: (
-      <div className="glass rounded-xl p-4" key="mood">
-        <div className="flex items-center gap-1.5 mb-1">
-          <Activity className="w-3.5 h-3.5 text-primary" />
-          <span className="text-xs text-muted-foreground">Mood</span>
-        </div>
-        <p className="text-2xl font-bold">
-          {latestMetric?.mood_score ?? "—"}
-          {latestMetric?.mood_score && <span className="text-xs text-muted-foreground ml-1">/10</span>}
-        </p>
-      </div>
-    ),
-    weight: (
-      <div className="glass rounded-xl p-4" key="weight">
-        <div className="flex items-center gap-1.5 mb-1">
-          <TrendingUp className="w-3.5 h-3.5 text-green-400" />
-          <span className="text-xs text-muted-foreground">Peso</span>
-        </div>
-        <p className="text-2xl font-bold">
-          {latestMetric?.weight_kg ?? "—"}
-          {latestMetric?.weight_kg && <span className="text-xs text-muted-foreground ml-1">kg</span>}
-        </p>
-      </div>
-    ),
-    kcal: (
-      <div className="glass rounded-xl p-4" key="kcal">
-        <div className="flex items-center gap-1.5 mb-1">
-          <Flame className="w-3.5 h-3.5 text-orange-400" />
-          <span className="text-xs text-muted-foreground">Kcal</span>
-        </div>
-        <p className="text-2xl font-bold">
-          {latestMetric?.calories_kcal ? (latestMetric.calories_kcal / 1000).toFixed(1) + "k" : "—"}
-        </p>
-      </div>
-    ),
-    finance: (
-      <div className="glass rounded-xl p-4" key="finance">
-        <div className="flex items-center gap-1.5 mb-1">
-          <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-xs text-muted-foreground">Finanzas</span>
-        </div>
-        <p className="text-sm font-semibold text-emerald-300">{net14 >= 0 ? "+" : ""}{fmtCop(net14)}</p>
-      </div>
-    ),
-  } as const;
-
-  const kpiCards = dashboardCardOrder
-    .filter((key) => dashboardVisibleCards.includes(key) && key in kpiMap)
-    .map((key) => kpiMap[key as keyof typeof kpiMap]);
-
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <p className="text-muted-foreground text-sm capitalize">{displayDate}</p>
-        <h2 className="text-2xl font-bold mt-0.5">Buenos días 👋</h2>
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-muted-foreground text-sm capitalize">{displayDate}</p>
+          <h2 className="text-2xl font-bold mt-0.5">Buenos días 👋</h2>
+        </div>
+        <ActionButtons />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Execution Panel */}
+        {/* Main Panel */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Today Focus */}
+          {/* Finance Chart */}
           <div className="glass rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckSquare className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold">Focus de hoy</h3>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {allTasks.length} pendientes
-              </span>
+            <div className="flex items-center gap-2 mb-3">
+              <DollarSign className="w-5 h-5 text-emerald-400" />
+              <h3 className="font-semibold">Finanzas (14 días)</h3>
             </div>
-
-            {p1Tasks.length === 0 && allTasks.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                <CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                <p>Sin tareas pendientes para hoy</p>
+            <div className="grid grid-cols-3 gap-2 mb-3 text-xs">
+              <div className="rounded-lg bg-green-500/10 border border-green-500/20 px-2.5 py-2">
+                <p className="text-muted-foreground">Ingresos</p>
+                <p className="text-green-300 font-semibold mt-0.5">{fmtCop(income14)}</p>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {allTasks.slice(0, 8).map((task) => (
-                  <div
-                    key={task.id}
-                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-accent/50 transition-colors group"
-                  >
-                    <div
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        task.priority === "P1"
-                          ? "bg-red-500"
-                          : task.priority === "P2"
-                          ? "bg-yellow-500"
-                          : "bg-blue-500"
-                      }`}
-                    />
-                    <span className="text-sm flex-1 truncate">{task.title}</span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-md font-mono ${
-                        task.priority === "P1"
-                          ? "bg-red-500/10 text-red-400"
-                          : task.priority === "P2"
-                          ? "bg-yellow-500/10 text-yellow-400"
-                          : "bg-blue-500/10 text-blue-400"
-                      }`}
-                    >
-                      {task.priority}
-                    </span>
-                  </div>
-                ))}
+              <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-2.5 py-2">
+                <p className="text-muted-foreground">Gastos</p>
+                <p className="text-red-300 font-semibold mt-0.5">{fmtCop(expense14)}</p>
               </div>
-            )}
+              <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-2">
+                <p className="text-muted-foreground">Shopify</p>
+                <p className="text-cyan-300 font-semibold mt-0.5">{fmtCop(shopifyIncome14)}</p>
+              </div>
+            </div>
+            <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/10 px-3 py-2 mb-3">
+              <p className="text-xs text-muted-foreground">Balance neto</p>
+              <p className={`text-lg font-bold ${net14 >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {net14 >= 0 ? "+" : ""}{fmtCop(net14)}
+              </p>
+            </div>
+            <FinanceTrendChart data={financeTrend} />
           </div>
 
-          {/* Habits */}
+          {/* Tasks from Notion */}
+          <NotionTasks />
+
+          {/* Habits from Supabase */}
           <div className="glass rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-4">
               <Flame className="w-5 h-5 text-orange-400" />
@@ -284,34 +170,10 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* Telemetry Panel */}
+        {/* Side Panel */}
         <div className="space-y-5">
-          {/* KPIs */}
-          <div className="grid grid-cols-2 gap-3">
-            {kpiCards}
-          </div>
-
-          <div className="glass rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <DollarSign className="w-4 h-4 text-emerald-400" />
-              <h3 className="font-semibold text-sm">Finanzas (14 días)</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-              <div className="rounded-lg bg-green-500/10 border border-green-500/20 px-2.5 py-2">
-                <p className="text-muted-foreground">Ingresos</p>
-                <p className="text-green-300 font-semibold mt-0.5">{fmtCop(income14)}</p>
-              </div>
-              <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-2.5 py-2">
-                <p className="text-muted-foreground">Gastos</p>
-                <p className="text-red-300 font-semibold mt-0.5">{fmtCop(expense14)}</p>
-              </div>
-              <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-2 col-span-2">
-                <p className="text-muted-foreground">Ingresos Shopify</p>
-                <p className="text-cyan-300 font-semibold mt-0.5">{fmtCop(shopifyIncome14)}</p>
-              </div>
-            </div>
-            <FinanceTrendChart data={financeTrend} />
-          </div>
+          {/* Projects from Notion */}
+          <NotionProjects />
 
           {/* AI Insight */}
           <div className="glass rounded-2xl p-5">
@@ -325,36 +187,10 @@ export default async function DashboardPage() {
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Registra métricas y completa tareas para que la IA genere insights
-                personalizados.
+                Completa tareas y hábitos para que la IA genere insights personalizados.
               </p>
             )}
           </div>
-
-          {/* Trend */}
-          <div className="glass rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingDown className="w-4 h-4 text-violet-400" />
-              <h3 className="font-semibold text-sm">Tendencia {trendDays} días</h3>
-            </div>
-            <TrendChart data={weekMetrics ?? []} />
-          </div>
-
-          {/* Latest Snippet */}
-          {latestSnippet && (
-            <div className="glass rounded-2xl p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <Brain className="w-4 h-4 text-cyan-400" />
-                <h3 className="font-semibold text-sm">Último snippet</h3>
-              </div>
-              <p className="text-xs font-semibold text-muted-foreground mb-1">
-                {latestSnippet.title}
-              </p>
-              <pre className="text-xs bg-secondary/60 rounded-lg p-3 overflow-x-auto text-foreground/80 max-h-24">
-                <code>{(latestSnippet.content as string).slice(0, 200)}</code>
-              </pre>
-            </div>
-          )}
         </div>
       </div>
     </div>
