@@ -1,10 +1,14 @@
-import { Client } from "@notionhq/client";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-/**
- * Creates a Notion client using a user's access token (obtained via OAuth).
- */
-export function createNotionClient(accessToken: string): Client {
-  return new Client({ auth: accessToken });
+const NOTION_API = "https://api.notion.com/v1";
+const NOTION_VERSION = "2022-06-28";
+
+function notionHeaders(accessToken: string) {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    "Notion-Version": NOTION_VERSION,
+    "Content-Type": "application/json",
+  };
 }
 
 /**
@@ -49,7 +53,7 @@ export async function exchangeCodeForToken(code: string): Promise<{
 
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
-  const response = await fetch("https://api.notion.com/v1/oauth/token", {
+  const response = await fetch(`${NOTION_API}/oauth/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -80,12 +84,22 @@ export async function exchangeCodeForToken(code: string): Promise<{
  * Searches for all databases the integration has access to.
  */
 export async function listDatabases(accessToken: string) {
-  const notion = createNotionClient(accessToken);
-  const response = await notion.search({
-    filter: { value: "database", property: "object" },
-    page_size: 50,
+  const response = await fetch(`${NOTION_API}/search`, {
+    method: "POST",
+    headers: notionHeaders(accessToken),
+    body: JSON.stringify({
+      filter: { value: "database", property: "object" },
+      page_size: 50,
+    }),
   });
-  return response.results;
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Notion search failed: ${err}`);
+  }
+
+  const data = await response.json();
+  return data.results as any[];
 }
 
 /**
@@ -96,11 +110,21 @@ export async function createNotionPage(
   databaseId: string,
   properties: Record<string, unknown>
 ) {
-  const notion = createNotionClient(accessToken);
-  return notion.pages.create({
-    parent: { database_id: databaseId },
-    properties: properties as Parameters<typeof notion.pages.create>[0]["properties"],
+  const response = await fetch(`${NOTION_API}/pages`, {
+    method: "POST",
+    headers: notionHeaders(accessToken),
+    body: JSON.stringify({
+      parent: { database_id: databaseId },
+      properties,
+    }),
   });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Notion create page failed: ${err}`);
+  }
+
+  return response.json();
 }
 
 /**
@@ -113,20 +137,37 @@ export async function queryNotionDatabase(
   sorts?: Array<{ property: string; direction: "ascending" | "descending" }>,
   pageSize = 20
 ) {
-  const notion = createNotionClient(accessToken);
-  return notion.databases.query({
-    database_id: databaseId,
-    filter: filter as Parameters<typeof notion.databases.query>[0]["filter"],
-    sorts: sorts as Parameters<typeof notion.databases.query>[0]["sorts"],
-    page_size: pageSize,
+  const body: Record<string, unknown> = { page_size: pageSize };
+  if (filter) body.filter = filter;
+  if (sorts) body.sorts = sorts;
+
+  const response = await fetch(`${NOTION_API}/databases/${databaseId}/query`, {
+    method: "POST",
+    headers: notionHeaders(accessToken),
+    body: JSON.stringify(body),
   });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Notion query failed: ${err}`);
+  }
+
+  return response.json();
 }
 
 /**
  * Retrieves the schema (properties) of a Notion database.
  */
 export async function getDatabaseSchema(accessToken: string, databaseId: string) {
-  const notion = createNotionClient(accessToken);
-  const db = await notion.databases.retrieve({ database_id: databaseId });
-  return db;
+  const response = await fetch(`${NOTION_API}/databases/${databaseId}`, {
+    method: "GET",
+    headers: notionHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Notion get database failed: ${err}`);
+  }
+
+  return response.json();
 }
